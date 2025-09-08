@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@google-cloud/firestore": "^7.7.0",
+    "@google-cloud/secret-manager": "^5.4.0",
     "crypto": "^1.0.1",
     "dotenv": "^17.2.2",
     "express": "^4.19.2",
