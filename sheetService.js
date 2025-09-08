@@ -28,7 +28,7 @@ async function initializeAuth() {
   }
   return { auth, sheets };
 }
-export async function saveToSheet({ date, text, amount, dbcr, category }, sheetId) {
+export async function saveToSheet({ date, text, amount, dbcr, category, createdBy }, sheetId) {
   const { sheets } = await initializeAuth();
   
   // First, get existing transactions to calculate totals
@@ -36,7 +36,7 @@ export async function saveToSheet({ date, text, amount, dbcr, category }, sheetI
   try {
     const existingResponse = await sheets.spreadsheets.values.get({
       spreadsheetId: sheetId,
-      range: "Transactions!A6:E", // Read from row 6 onwards to the end
+      range: "Transactions!A6:F", // Read from row 6 onwards to the end
     });
     existingData = existingResponse.data.values || [];
   } catch (error) {
@@ -44,7 +44,7 @@ export async function saveToSheet({ date, text, amount, dbcr, category }, sheetI
   }
 
   // Add the new transaction to existing data for calculation
-  const allTransactions = [...existingData, [date, text, amount, dbcr, category]];
+  const allTransactions = [...existingData, [date, text, amount, dbcr, category, createdBy]];
   
   // Calculate totals
   let totalDebit = 0;
@@ -76,9 +76,9 @@ export async function saveToSheet({ date, text, amount, dbcr, category }, sheetI
       ]
     },
     {
-      range: "Transactions!A5:E5",
+      range: "Transactions!A5:F5",
       values: [
-        ["Date", "Description", "Amount", "Type", "Category"]
+        ["Date", "Description", "Amount", "Type", "Category", "Created By"]
       ]
     }
   ];
@@ -140,10 +140,10 @@ export async function saveToSheet({ date, text, amount, dbcr, category }, sheetI
   // Append the new transaction starting from row 6
   await sheets.spreadsheets.values.append({
     spreadsheetId: sheetId,
-    range: "Transactions!A6:E6",
+    range: "Transactions!A6:F6",
     valueInputOption: "USER_ENTERED",
     requestBody: { 
-      values: [[date, text, amount, dbcr, category]]
+      values: [[date, text, amount, dbcr, category, createdBy]]
     },
   });
 }

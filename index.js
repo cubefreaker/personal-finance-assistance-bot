@@ -334,6 +334,7 @@ bot.on("message", async (ctx, next) => {
     amount,
     dbcr: transactionData.dbcr,
     category: transactionData.category,
+    createdBy: `${ctx.from.id} (${ctx.from?.first_name || ""} ${ctx.from?.last_name || ""})${ctx.from?.username ? ` @${ctx.from?.username}` : ""}`,
   }, userSheetId);
 
   let formattedDate = new Date(date).toLocaleDateString("id-ID", {
