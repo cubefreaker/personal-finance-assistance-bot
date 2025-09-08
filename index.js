@@ -11,8 +11,6 @@ const app = express();
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const SHEET_ID = process.env.SHEET_ID;
 
 const bot = new Telegraf(BOT_TOKEN);
 
@@ -329,10 +327,11 @@ bot.on("message", async (ctx, next) => {
     date = new Date(new Date().setDate(new Date().getDate() + transactionData.dateDiff)).toISOString().split("T")[0].split("-").reverse().join("-");
   }
   
+  let amount = transactionData.dbcr.toLowerCase() === "credit" ? -transactionData.amount : transactionData.amount;
   await saveToSheet({
     date,
     text: transactionData.description,
-    amount: transactionData.amount,
+    amount,
     dbcr: transactionData.dbcr,
     category: transactionData.category,
   }, userSheetId);
@@ -342,7 +341,7 @@ bot.on("message", async (ctx, next) => {
     month: "2-digit",
     year: "numeric",
   });
-  let formattedAmount = transactionData.amount.toLocaleString("id-ID", {
+  let formattedAmount = amount.toLocaleString("id-ID", {
     style: "currency",
     currency: "IDR",
   });
