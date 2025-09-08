@@ -20,7 +20,7 @@ async function initializeFirestore() {
         credentials
       });
     } catch (error) {
-      console.error("Error initializing Firestore:", error);
+      console.log("Error initializing Firestore:", error);
       // Fallback to keyFile for local development
       firestore = new Firestore({
         projectId: 'hamzah-dev',
