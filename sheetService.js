@@ -31,12 +31,24 @@ async function initializeAuth() {
 export async function saveToSheet({ date, text, amount, dbcr, category, createdBy }, sheetId) {
   const { sheets } = await initializeAuth();
   
+  // Get the actual sheet information to get the first sheet name
+  const spreadsheetInfo = await sheets.spreadsheets.get({
+    spreadsheetId: sheetId,
+  });
+  
+  // Get the first sheet (index 0) regardless of its name
+  const firstSheet = spreadsheetInfo.data.sheets.find(sheet => sheet.properties.index === 0);
+  if (!firstSheet) {
+    throw new Error("No sheets found in the spreadsheet");
+  }
+  const sheetName = firstSheet.properties.title;
+  
   // First, get existing transactions to calculate totals
   let existingData = [];
   try {
     const existingResponse = await sheets.spreadsheets.values.get({
       spreadsheetId: sheetId,
-      range: "Transactions!A6:F", // Read from row 6 onwards to the end
+      range: `${sheetName}!A6:F`, // Read from row 6 onwards to the end
     });
     existingData = existingResponse.data.values || [];
   } catch (error) {
@@ -65,18 +77,11 @@ export async function saveToSheet({ date, text, amount, dbcr, category, createdB
   
   const totalBalance = totalDebit - totalCredit;
   
-  // Get the actual sheet information to get the correct sheetId
-  const spreadsheetInfo = await sheets.spreadsheets.get({
-    spreadsheetId: sheetId,
-  });
-  
-  const transactionsSheet = spreadsheetInfo.data.sheets.find(sheet => 
-    sheet.properties.title === 'Transactions' || sheet.properties.index === 0
-  );
-  const actualSheetId = transactionsSheet ? transactionsSheet.properties.sheetId : 0;
+  // Use the first sheet we already found
+  const actualSheetId = firstSheet.properties.sheetId;
 
   // Check existing merged cells to avoid duplicate merging
-  const existingMerges = transactionsSheet?.merges || [];
+  const existingMerges = firstSheet?.merges || [];
   
   // Helper function to check if a range is already merged
   const isRangeMerged = (startRow, endRow, startCol, endCol) => {
@@ -92,7 +97,7 @@ export async function saveToSheet({ date, text, amount, dbcr, category, createdB
   // Prepare all data to write
   const updates = [
     {
-      range: "Transactions!A1:F3",
+      range: `${sheetName}!A1:F3`,
       values: [
         ["Pemasukan", totalDebit, "", "", "", ""], // Spread value across merged range
         ["Pengeluaran", totalCredit, "", "", "", ""],
@@ -100,7 +105,7 @@ export async function saveToSheet({ date, text, amount, dbcr, category, createdB
       ]
     },
     {
-      range: "Transactions!A5:F5",
+      range: `${sheetName}!A5:F5`,
       values: [
         ["Date", "Description", "Amount", "Type", "Category", "Created By"]
       ]
@@ -188,7 +193,7 @@ export async function saveToSheet({ date, text, amount, dbcr, category, createdB
   // Append the new transaction starting from row 6
   await sheets.spreadsheets.values.append({
     spreadsheetId: sheetId,
-    range: "Transactions!A6:F6",
+    range: `${sheetName}!A6:F6`,
     valueInputOption: "USER_ENTERED",
     requestBody: { 
       values: [[date, text, amount, dbcr, category, createdBy]]

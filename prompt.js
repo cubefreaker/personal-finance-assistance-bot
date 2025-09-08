@@ -179,7 +179,7 @@ export const getSetupGoogleSheetInstruction = () => {
    • Beri nama yang mudah diingat \\(contoh: "Personal Finance"\\)
 
 2\\. *Setup Sheet Structure:*
-   • Rename sheet pertama menjadi "Transactions"
+   • Bot akan menggunakan sheet pertama \\(tidak perlu rename\\)
    • Di baris 1, tambahkan header berikut:
      \\- A1: Date
      \\- B1: Description  
@@ -217,7 +217,7 @@ export const getSetupGoogleSheetInstruction = () => {
 
 💡 *Tips:*
 • Sheet ID tidak boleh ada spasi di awal/akhir
-• Jangan ubah nama sheet "Transactions"
+• Bot akan otomatis menggunakan sheet pertama
 • Backup data penting secara berkala
 
 ❓ *Masalah?*
