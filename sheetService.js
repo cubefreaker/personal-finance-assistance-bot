@@ -92,6 +92,51 @@ export async function saveToSheet({ date, text, amount, dbcr, category }, sheetI
     }
   });
   
+  // Merge cells for summary rows
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: sheetId,
+    requestBody: {
+      requests: [
+        {
+          mergeCells: {
+            range: {
+              sheetId: 0, // Assuming first sheet (Transactions)
+              startRowIndex: 0, // Row 1 (0-indexed)
+              endRowIndex: 1,
+              startColumnIndex: 1, // Column B (0-indexed)
+              endColumnIndex: 5 // Column E (0-indexed, exclusive)
+            },
+            mergeType: "MERGE_ALL"
+          }
+        },
+        {
+          mergeCells: {
+            range: {
+              sheetId: 0, // Assuming first sheet (Transactions)
+              startRowIndex: 1, // Row 2 (0-indexed)
+              endRowIndex: 2,
+              startColumnIndex: 1, // Column B (0-indexed)
+              endColumnIndex: 5 // Column E (0-indexed, exclusive)
+            },
+            mergeType: "MERGE_ALL"
+          }
+        },
+        {
+          mergeCells: {
+            range: {
+              sheetId: 0, // Assuming first sheet (Transactions)
+              startRowIndex: 2, // Row 3 (0-indexed)
+              endRowIndex: 3,
+              startColumnIndex: 1, // Column B (0-indexed)
+              endColumnIndex: 5 // Column E (0-indexed, exclusive)
+            },
+            mergeType: "MERGE_ALL"
+          }
+        }
+      ]
+    }
+  });
+  
   // Append the new transaction starting from row 6
   await sheets.spreadsheets.values.append({
     spreadsheetId: sheetId,
