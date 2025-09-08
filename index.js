@@ -2,7 +2,7 @@ import express from "express";
 import { Telegraf, Markup } from "telegraf";
 import fetch from "node-fetch";
 import dotenv from "dotenv";
-import { getTransactionPrompt, getWelcomeMessage } from "./prompt.js";
+import { getTransactionPrompt, getWelcomeMessage, getSetupGeminiInstruction, getSetupGoogleSheetInstruction } from "./prompt.js";
 import { saveApiKey, getApiKey, hasApiKey, deleteApiKey, saveSheetId, getSheetId, hasSheetId, isUserSetupComplete } from "./apiKeyService.js";
 import { saveToSheet, validateGoogleSheetId } from "./sheetService.js";
 dotenv.config();
@@ -66,7 +66,7 @@ async function categorizeTransaction(message, apiKey) {
     }
   ).then((r) => r.json());
 
-  let parsed = { description: "", amount: 0, date: "", category: "Uncategorized", message: "" };
+  let parsed = { description: "", amount: 0, date: "", dbcr: "credit", category: "Uncategorized", message: "" };
   try {
     const text = res?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
 
@@ -96,33 +96,22 @@ bot.start(async (ctx) => {
   const userHasApiKey = await hasApiKey(userId);
   const userHasSheetId = await hasSheetId(userId);
   
-  if (!userHasApiKey && !userHasSheetId) {
-    await ctx.reply(`🔑 Selamat datang! Untuk menggunakan bot ini, Anda perlu menyimpan API key Gemini dan Google Sheet ID Anda terlebih dahulu.\n\nSilakan kirim:\n1. API key Gemini: /setkey YOUR_GEMINI_API_KEY\n2. Google Sheet ID: /setsheet YOUR_GOOGLE_SHEET_ID\n\nAtau kirim pesan dengan format:\nsetkey YOUR_GEMINI_API_KEY\nsetsheet YOUR_GOOGLE_SHEET_ID`);
-  } else if (!userHasApiKey) {
-    await ctx.reply(`🔑 Anda sudah memiliki Google Sheet ID, tetapi masih perlu menyimpan API key Gemini Anda.\n\nSilakan kirim API key Gemini Anda dengan format:\n/setkey YOUR_GEMINI_API_KEY\n\nAtau kirim pesan dengan format:\nsetkey YOUR_GEMINI_API_KEY`);
-  } else if (!userHasSheetId) {
-    await ctx.reply(`📊 Anda sudah memiliki API key Gemini, tetapi masih perlu menyimpan Google Sheet ID Anda.\n\nSilakan kirim Google Sheet ID Anda dengan format:\n/setsheet YOUR_GOOGLE_SHEET_ID\n\nAtau kirim pesan dengan format:\nsetsheet YOUR_GOOGLE_SHEET_ID`);
-  } else {
-    await ctx.reply(getWelcomeMessage(process.env));
-  }
-});
+  await ctx.reply(getWelcomeMessage(process.env), { parse_mode: "MarkdownV2" });
 
-// Handle start button callback
-bot.action('start', async (ctx) => {
-  await ctx.answerCbQuery();
-  const userId = ctx.from.id;
-  const userHasApiKey = await hasApiKey(userId);
-  const userHasSheetId = await hasSheetId(userId);
-  
   if (!userHasApiKey && !userHasSheetId) {
-    await ctx.reply(`🔑 Untuk menggunakan bot ini, Anda perlu menyimpan API key Gemini dan Google Sheet ID Anda terlebih dahulu.\n\nSilakan kirim:\n1. API key Gemini: /setkey YOUR_GEMINI_API_KEY\n2. Google Sheet ID: /setsheet YOUR_GOOGLE_SHEET_ID\n\nAtau kirim pesan dengan format:\nsetkey YOUR_GEMINI_API_KEY\nsetsheet YOUR_GOOGLE_SHEET_ID`);
+    await ctx.reply(`🔑 Untuk menggunakan bot ini, Anda perlu menyimpan API key Gemini dan Google Sheet ID Anda terlebih dahulu.\n\nSilakan kirim:\n1. API key Gemini: /setkey YOUR_GEMINI_API_KEY\n2. Google Sheet ID: /setsheet YOUR_GOOGLE_SHEET_ID`);
   } else if (!userHasApiKey) {
-    await ctx.reply(`🔑 Anda sudah memiliki Google Sheet ID, tetapi masih perlu menyimpan API key Gemini Anda.\n\nSilakan kirim API key Gemini Anda dengan format:\n/setkey YOUR_GEMINI_API_KEY\n\nAtau kirim pesan dengan format:\nsetkey YOUR_GEMINI_API_KEY`);
+    await ctx.reply(`🔑 Anda sudah memiliki Google Sheet ID, tetapi masih perlu menyimpan API key Gemini Anda.\n\nSilakan kirim API key Gemini Anda dengan format:\n/setkey YOUR_GEMINI_API_KEY`);
   } else if (!userHasSheetId) {
-    await ctx.reply(`📊 Anda sudah memiliki API key Gemini, tetapi masih perlu menyimpan Google Sheet ID Anda.\n\nSilakan kirim Google Sheet ID Anda dengan format:\n/setsheet YOUR_GOOGLE_SHEET_ID\n\nAtau kirim pesan dengan format:\nsetsheet YOUR_GOOGLE_SHEET_ID`);
-  } else {
-    await ctx.reply(getWelcomeMessage(process.env));
+    await ctx.reply(`📊 Anda sudah memiliki API key Gemini, tetapi masih perlu menyimpan Google Sheet ID Anda.\n\nSilakan kirim Google Sheet ID Anda dengan format:\n/setsheet YOUR_GOOGLE_SHEET_ID`);
   }
+
+  // add inline button for info_setup_gemini and info_setup_gsheet
+  await ctx.reply('Silakan klik tombol dibawah ini untuk informasi lebih lanjut:', {
+    reply_markup: {
+      inline_keyboard: [[{ text: 'Info Setup API Key Gemini', callback_data: 'info_setup_gemini' }, { text: 'Info Setup Google Sheet', callback_data: 'info_setup_gsheet' }]]
+    }
+  });
 });
 
 // Handle /setkey command
@@ -147,9 +136,9 @@ bot.command('setkey', async (ctx) => {
   if (saved) {
     const userHasSheetId = await hasSheetId(userId);
     if (userHasSheetId) {
-      await ctx.reply('✅ API key berhasil disimpan! Sekarang Anda dapat menggunakan bot ini.\n\n' + getWelcomeMessage(process.env));
+      await ctx.reply('✅ API key berhasil disimpan! Sekarang Anda dapat menggunakan bot ini.');
     } else {
-      await ctx.reply('✅ API key berhasil disimpan! Sekarang Anda perlu menyimpan Google Sheet ID Anda.\n\nSilakan kirim Google Sheet ID Anda dengan format:\n/setsheet YOUR_GOOGLE_SHEET_ID\n\nAtau kirim pesan dengan format:\nsetsheet YOUR_GOOGLE_SHEET_ID');
+      await ctx.reply('✅ API key berhasil disimpan! Sekarang Anda perlu menyimpan Google Sheet ID Anda.\n\nSilakan kirim Google Sheet ID Anda dengan format:\n/setsheet YOUR_GOOGLE_SHEET_ID');
     }
   } else {
     await ctx.reply('❌ Gagal menyimpan API key. Silakan coba lagi.');
@@ -178,9 +167,9 @@ bot.command('setsheet', async (ctx) => {
   if (saved) {
     const userHasApiKey = await hasApiKey(userId);
     if (userHasApiKey) {
-      await ctx.reply('✅ Google Sheet ID berhasil disimpan! Sekarang Anda dapat menggunakan bot ini.\n\n' + getWelcomeMessage(process.env));
+      await ctx.reply('✅ Google Sheet ID berhasil disimpan! Sekarang Anda dapat menggunakan bot ini.');
     } else {
-      await ctx.reply('✅ Google Sheet ID berhasil disimpan! Sekarang Anda perlu menyimpan API key Gemini Anda.\n\nSilakan kirim API key Gemini Anda dengan format:\n/setkey YOUR_GEMINI_API_KEY\n\nAtau kirim pesan dengan format:\nsetkey YOUR_GEMINI_API_KEY');
+      await ctx.reply('✅ Google Sheet ID berhasil disimpan! Sekarang Anda perlu menyimpan API key Gemini Anda.\n\nSilakan kirim API key Gemini Anda dengan format:\n/setkey YOUR_GEMINI_API_KEY');
     }
   } else {
     await ctx.reply('❌ Gagal menyimpan Google Sheet ID. Silakan coba lagi.');
@@ -199,6 +188,33 @@ bot.command('removekey', async (ctx) => {
   }
 });
 
+// Handle /info command
+bot.command('info', async (ctx) => {
+  await ctx.reply(getWelcomeMessage(process.env), { parse_mode: "MarkdownV2" });
+});
+
+// Handle /info_setup_gemini command
+bot.command('info_setup_gemini', async (ctx) => {
+  await ctx.reply(getSetupGeminiInstruction(), { parse_mode: "MarkdownV2" });
+});
+
+// Handle /info_setup_gsheet command
+bot.command('info_setup_gsheet', async (ctx) => {
+  await ctx.reply(getSetupGoogleSheetInstruction(), { parse_mode: "MarkdownV2" });
+});
+
+// Handle /info_setup_gemini command
+bot.action('info_setup_gemini', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.reply(getSetupGeminiInstruction(), { parse_mode: "MarkdownV2" });
+});
+
+// Handle /info_setup_gsheet command
+bot.action('info_setup_gsheet', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.reply(getSetupGoogleSheetInstruction(), { parse_mode: "MarkdownV2" });
+});
+
 bot.on("message", async (ctx, next) => {
   // Only handle text messages
   if (!ctx.message || !("text" in ctx.message)) {
@@ -207,23 +223,6 @@ bot.on("message", async (ctx, next) => {
   
   const message = ctx.message.text;
   const userId = ctx.from.id;
-  
-  // Handle "start" text message
-  if (message.toLowerCase() === "start") {
-    const userHasApiKey = await hasApiKey(userId);
-    const userHasSheetId = await hasSheetId(userId);
-    
-    if (!userHasApiKey && !userHasSheetId) {
-      await ctx.reply(`🔑 Untuk menggunakan bot ini, Anda perlu menyimpan API key Gemini dan Google Sheet ID Anda terlebih dahulu.\n\nSilakan kirim:\n1. API key Gemini: /setkey YOUR_GEMINI_API_KEY\n2. Google Sheet ID: /setsheet YOUR_GOOGLE_SHEET_ID\n\nAtau kirim pesan dengan format:\nsetkey YOUR_GEMINI_API_KEY\nsetsheet YOUR_GOOGLE_SHEET_ID`);
-    } else if (!userHasApiKey) {
-      await ctx.reply(`🔑 Anda sudah memiliki Google Sheet ID, tetapi masih perlu menyimpan API key Gemini Anda.\n\nSilakan kirim API key Gemini Anda dengan format:\n/setkey YOUR_GEMINI_API_KEY\n\nAtau kirim pesan dengan format:\nsetkey YOUR_GEMINI_API_KEY`);
-    } else if (!userHasSheetId) {
-      await ctx.reply(`📊 Anda sudah memiliki API key Gemini, tetapi masih perlu menyimpan Google Sheet ID Anda.\n\nSilakan kirim Google Sheet ID Anda dengan format:\n/setsheet YOUR_GOOGLE_SHEET_ID\n\nAtau kirim pesan dengan format:\nsetsheet YOUR_GOOGLE_SHEET_ID`);
-    } else {
-      await ctx.reply(getWelcomeMessage(process.env));
-    }
-    return;
-  }
   
   // Handle setkey command (without slash)
   if (message.toLowerCase().startsWith('setkey ')) {
@@ -246,9 +245,9 @@ bot.on("message", async (ctx, next) => {
     if (saved) {
       const userHasSheetId = await hasSheetId(userId);
       if (userHasSheetId) {
-        await ctx.reply('✅ API key berhasil disimpan! Sekarang Anda dapat menggunakan bot ini.\n\n' + getWelcomeMessage(process.env));
+        await ctx.reply('✅ API key berhasil disimpan! Sekarang Anda dapat menggunakan bot ini.\n\n' + getWelcomeMessage(process.env), { parse_mode: "MarkdownV2" });
       } else {
-        await ctx.reply('✅ API key berhasil disimpan! Sekarang Anda perlu menyimpan Google Sheet ID Anda.\n\nSilakan kirim Google Sheet ID Anda dengan format:\n/setsheet YOUR_GOOGLE_SHEET_ID\n\nAtau kirim pesan dengan format:\nsetsheet YOUR_GOOGLE_SHEET_ID');
+        await ctx.reply('✅ API key berhasil disimpan! Sekarang Anda perlu menyimpan Google Sheet ID Anda.\n\nSilakan kirim Google Sheet ID Anda dengan format:\n/setsheet YOUR_GOOGLE_SHEET_ID');
       }
     } else {
       await ctx.reply('❌ Gagal menyimpan API key. Silakan coba lagi.');
@@ -277,9 +276,9 @@ bot.on("message", async (ctx, next) => {
     if (saved) {
       const userHasApiKey = await hasApiKey(userId);
       if (userHasApiKey) {
-        await ctx.reply('✅ Google Sheet ID berhasil disimpan! Sekarang Anda dapat menggunakan bot ini.\n\n' + getWelcomeMessage(process.env));
+        await ctx.reply('✅ Google Sheet ID berhasil disimpan! Sekarang Anda dapat menggunakan bot ini.\n\n' + getWelcomeMessage(process.env), { parse_mode: "MarkdownV2" });
       } else {
-        await ctx.reply('✅ Google Sheet ID berhasil disimpan! Sekarang Anda perlu menyimpan API key Gemini Anda.\n\nSilakan kirim API key Gemini Anda dengan format:\n/setkey YOUR_GEMINI_API_KEY\n\nAtau kirim pesan dengan format:\nsetkey YOUR_GEMINI_API_KEY');
+        await ctx.reply('✅ Google Sheet ID berhasil disimpan! Sekarang Anda perlu menyimpan API key Gemini Anda.\n\nSilakan kirim API key Gemini Anda dengan format:\n/setkey YOUR_GEMINI_API_KEY');
       }
     } else {
       await ctx.reply('❌ Gagal menyimpan Google Sheet ID. Silakan coba lagi.');
@@ -292,13 +291,13 @@ bot.on("message", async (ctx, next) => {
   const userHasSheetId = await hasSheetId(userId);
   
   if (!userHasApiKey && !userHasSheetId) {
-    await ctx.reply(`🔑 Anda belum menyimpan API key Gemini dan Google Sheet ID Anda.\n\nSilakan kirim:\n1. API key Gemini: /setkey YOUR_GEMINI_API_KEY\n2. Google Sheet ID: /setsheet YOUR_GOOGLE_SHEET_ID\n\nAtau kirim pesan dengan format:\nsetkey YOUR_GEMINI_API_KEY\nsetsheet YOUR_GOOGLE_SHEET_ID`);
+    await ctx.reply(`🔑 Anda belum menyimpan API key Gemini dan Google Sheet ID Anda.\n\nSilakan kirim:\n1. API key Gemini: /setkey YOUR_GEMINI_API_KEY\n2. Google Sheet ID: /setsheet YOUR_GOOGLE_SHEET_ID\nsetsheet YOUR_GOOGLE_SHEET_ID`);
     return;
   } else if (!userHasApiKey) {
-    await ctx.reply(`🔑 Anda sudah memiliki Google Sheet ID, tetapi masih perlu menyimpan API key Gemini Anda.\n\nSilakan kirim API key Gemini Anda dengan format:\n/setkey YOUR_GEMINI_API_KEY\n\nAtau kirim pesan dengan format:\nsetkey YOUR_GEMINI_API_KEY`);
+    await ctx.reply(`🔑 Anda sudah memiliki Google Sheet ID, tetapi masih perlu menyimpan API key Gemini Anda.\n\nSilakan kirim API key Gemini Anda dengan format:\n/setkey YOUR_GEMINI_API_KEY`);
     return;
   } else if (!userHasSheetId) {
-    await ctx.reply(`📊 Anda sudah memiliki API key Gemini, tetapi masih perlu menyimpan Google Sheet ID Anda.\n\nSilakan kirim Google Sheet ID Anda dengan format:\n/setsheet YOUR_GOOGLE_SHEET_ID\n\nAtau kirim pesan dengan format:\nsetsheet YOUR_GOOGLE_SHEET_ID`);
+    await ctx.reply(`📊 Anda sudah memiliki API key Gemini, tetapi masih perlu menyimpan Google Sheet ID Anda.\n\nSilakan kirim Google Sheet ID Anda dengan format:\n/setsheet YOUR_GOOGLE_SHEET_ID`);
     return;
   }
   
@@ -334,6 +333,7 @@ bot.on("message", async (ctx, next) => {
     date,
     text: transactionData.description,
     amount: transactionData.amount,
+    dbcr: transactionData.dbcr,
     category: transactionData.category,
   }, userSheetId);
 
@@ -348,7 +348,7 @@ bot.on("message", async (ctx, next) => {
   });
 
   await ctx.reply(
-    `✅ Transaksi berhasil disimpan!\n\n📅 Date: ${formattedDate}\n📝 Description: ${transactionData.description}\n💰 Amount: ${formattedAmount}\n🏷️ Category: ${transactionData.category}`
+    `✅ Transaksi berhasil disimpan!\n\n📅 Date: ${formattedDate}\n📝 Description: ${transactionData.description}\n💰 Amount: ${formattedAmount}\n🏷️ Category: ${transactionData.category}\n🔄 Tipe: ${transactionData.dbcr.toLowerCase() === "debit" ? "Debit" : transactionData.dbcr.toLowerCase() === "credit" ? "Kredit" : transactionData.dbcr}`
   );
 });
 

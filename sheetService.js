@@ -7,8 +7,8 @@ const auth = new google.auth.GoogleAuth({
 });
 const sheets = google.sheets({ version: "v4", auth });
 
-export async function saveToSheet({ date, text, amount, category }, sheetId) {
-  const values = [[date, text, amount, category]];
+export async function saveToSheet({ date, text, amount, dbcr, category }, sheetId) {
+  const values = [[date, text, amount, dbcr, category]];
   await sheets.spreadsheets.values.append({
     spreadsheetId: sheetId,
     range: "Transactions!A:D",
