@@ -8,10 +8,11 @@ let sheets;
 async function initializeAuth() {
   if (!auth) {
     try {
-      // Try to get credentials from Secret Manager first
+      // Get credentials from Secret Manager
       const client = new SecretManagerServiceClient();
+      const secretPath = process.env.SECRET_PATH || "projects/hamzah-dev/secrets/PersonalFinanceBotSecret/versions/latest";
       const [version] = await client.accessSecretVersion({
-        name: "projects/hamzah-dev/secrets/PersonalFinanceBotSecret/versions/latest",
+        name: secretPath,
       });
       const credentials = JSON.parse(version.payload.data.toString());
       
@@ -20,12 +21,8 @@ async function initializeAuth() {
         scopes: ["https://www.googleapis.com/auth/spreadsheets"],
       });
     } catch (error) {
-      console.log("Secret Manager not available, falling back to keyFile");
-      // Fallback to keyFile for local development
-      auth = new google.auth.GoogleAuth({
-        keyFile: "creds.json",
-        scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-      });
+      console.error("Failed to get credentials from Secret Manager:", error);
+      throw new Error("Unable to initialize Google Sheets authentication. Please ensure the secret is properly configured in Google Secret Manager.");
     }
     sheets = google.sheets({ version: "v4", auth });
   }

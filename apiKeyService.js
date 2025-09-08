@@ -1,10 +1,35 @@
 import { Firestore } from '@google-cloud/firestore';
+import { SecretManagerServiceClient } from '@google-cloud/secret-manager';
 import crypto from 'crypto';
 
-const firestore = new Firestore({
-  projectId: 'hamzah-dev',
-  keyFilename: 'creds.json'
-});
+let firestore;
+
+async function initializeFirestore() {
+  if (!firestore) {
+    try {
+      // Try to get credentials from Secret Manager first
+      const client = new SecretManagerServiceClient();
+      const secretPath = process.env.SECRET_PATH || "projects/hamzah-dev/secrets/PersonalFinanceBotSecret/versions/latest";
+      const [version] = await client.accessSecretVersion({
+        name: secretPath,
+      });
+      const credentials = JSON.parse(version.payload.data.toString());
+      
+      firestore = new Firestore({
+        projectId: 'hamzah-dev',
+        credentials
+      });
+    } catch (error) {
+      console.log("Secret Manager not available, falling back to keyFile");
+      // Fallback to keyFile for local development
+      firestore = new Firestore({
+        projectId: 'hamzah-dev',
+        keyFilename: 'creds.json'
+      });
+    }
+  }
+  return firestore;
+}
 
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'your-32-character-secret-key-here!'; // In production, use a proper secret
 const ALGORITHM = 'aes-256-cbc';
@@ -31,8 +56,9 @@ function decrypt(encryptedText) {
 
 export async function saveApiKey(userId, apiKey) {
   try {
+    const db = await initializeFirestore();
     const encryptedApiKey = encrypt(apiKey);
-    await firestore.collection('user_api_keys').doc(userId.toString()).set({
+    await db.collection('user_api_keys').doc(userId.toString()).set({
       apiKey: encryptedApiKey,
       createdAt: new Date(),
       updatedAt: new Date()
@@ -46,7 +72,8 @@ export async function saveApiKey(userId, apiKey) {
 
 export async function saveSheetId(userId, sheetId) {
   try {
-    await firestore.collection('user_api_keys').doc(userId.toString()).set({
+    const db = await initializeFirestore();
+    await db.collection('user_api_keys').doc(userId.toString()).set({
       sheetId: sheetId,
       updatedAt: new Date()
     }, { merge: true });
@@ -59,7 +86,8 @@ export async function saveSheetId(userId, sheetId) {
 
 export async function getApiKey(userId) {
   try {
-    const doc = await firestore.collection('user_api_keys').doc(userId.toString()).get();
+    const db = await initializeFirestore();
+    const doc = await db.collection('user_api_keys').doc(userId.toString()).get();
     if (!doc.exists) {
       return null;
     }
@@ -73,7 +101,8 @@ export async function getApiKey(userId) {
 
 export async function getSheetId(userId) {
   try {
-    const doc = await firestore.collection('user_api_keys').doc(userId.toString()).get();
+    const db = await initializeFirestore();
+    const doc = await db.collection('user_api_keys').doc(userId.toString()).get();
     if (!doc.exists) {
       return null;
     }
@@ -87,7 +116,8 @@ export async function getSheetId(userId) {
 
 export async function hasApiKey(userId) {
   try {
-    const doc = await firestore.collection('user_api_keys').doc(userId.toString()).get();
+    const db = await initializeFirestore();
+    const doc = await db.collection('user_api_keys').doc(userId.toString()).get();
     return doc.exists && doc.data().apiKey;
   } catch (error) {
     console.error('Error checking API key existence:', error);
@@ -97,7 +127,8 @@ export async function hasApiKey(userId) {
 
 export async function hasSheetId(userId) {
   try {
-    const doc = await firestore.collection('user_api_keys').doc(userId.toString()).get();
+    const db = await initializeFirestore();
+    const doc = await db.collection('user_api_keys').doc(userId.toString()).get();
     return doc.exists && doc.data().sheetId;
   } catch (error) {
     console.error('Error checking sheet ID existence:', error);
@@ -107,7 +138,8 @@ export async function hasSheetId(userId) {
 
 export async function isUserSetupComplete(userId) {
   try {
-    const doc = await firestore.collection('user_api_keys').doc(userId.toString()).get();
+    const db = await initializeFirestore();
+    const doc = await db.collection('user_api_keys').doc(userId.toString()).get();
     if (!doc.exists) return false;
     const data = doc.data();
     return !!(data.apiKey && data.sheetId);
@@ -119,7 +151,8 @@ export async function isUserSetupComplete(userId) {
 
 export async function deleteApiKey(userId) {
   try {
-    await firestore.collection('user_api_keys').doc(userId.toString()).delete();
+    const db = await initializeFirestore();
+    await db.collection('user_api_keys').doc(userId.toString()).delete();
     return true;
   } catch (error) {
     console.error('Error deleting API key:', error);
