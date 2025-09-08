@@ -20,7 +20,7 @@ async function initializeFirestore() {
         credentials
       });
     } catch (error) {
-      console.log("Secret Manager not available, falling back to keyFile");
+      console.error("Error initializing Firestore:", error);
       // Fallback to keyFile for local development
       firestore = new Firestore({
         projectId: 'hamzah-dev',
