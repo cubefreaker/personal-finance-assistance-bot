@@ -4,7 +4,7 @@ import fetch from "node-fetch";
 import dotenv from "dotenv";
 import { getTransactionPrompt, getWelcomeMessage, getSetupGeminiInstruction, getSetupGoogleSheetInstruction } from "./prompt.js";
 import { saveApiKey, getApiKey, hasApiKey, deleteApiKey, saveSheetId, getSheetId, hasSheetId, isUserSetupComplete } from "./apiKeyService.js";
-import { saveToSheet, validateGoogleSheetId } from "./sheetService.js";
+import { saveToSheet, validateGoogleSheetId, getSummaryData } from "./sheetService.js";
 dotenv.config();
 
 const app = express();
@@ -211,6 +211,62 @@ bot.action('info_setup_gemini', async (ctx) => {
 bot.action('info_setup_gsheet', async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.reply(getSetupGoogleSheetInstruction(), { parse_mode: "MarkdownV2" });
+});
+
+// Handle /saldo command
+bot.command('saldo', async (ctx) => {
+  const userId = ctx.from.id;
+  
+  // Check if user has both API key and sheet ID
+  const userHasApiKey = await hasApiKey(userId);
+  const userHasSheetId = await hasSheetId(userId);
+  
+  if (!userHasApiKey && !userHasSheetId) {
+    await ctx.reply(`🔑 Anda belum menyimpan API key Gemini dan Google Sheet ID Anda.\n\nSilakan kirim:\n1. API key Gemini: /setkey YOUR_GEMINI_API_KEY\n2. Google Sheet ID: /setsheet YOUR_GOOGLE_SHEET_ID`);
+    return;
+  } else if (!userHasApiKey) {
+    await ctx.reply(`🔑 Anda sudah memiliki Google Sheet ID, tetapi masih perlu menyimpan API key Gemini Anda.\n\nSilakan kirim API key Gemini Anda dengan format:\n/setkey YOUR_GEMINI_API_KEY`);
+    return;
+  } else if (!userHasSheetId) {
+    await ctx.reply(`📊 Anda sudah memiliki API key Gemini, tetapi masih perlu menyimpan Google Sheet ID Anda.\n\nSilakan kirim Google Sheet ID Anda dengan format:\n/setsheet YOUR_GOOGLE_SHEET_ID`);
+    return;
+  }
+  
+  try {
+    // Get user's sheet ID
+    const userSheetId = await getSheetId(userId);
+    
+    if (!userSheetId) {
+      await ctx.reply('❌ Gagal mengambil Google Sheet ID Anda. Silakan coba lagi atau set ulang Sheet ID Anda.');
+      return;
+    }
+    
+    // Get summary data from sheet
+    const summaryData = await getSummaryData(userSheetId);
+    
+    // Format currency values
+    const formattedPemasukan = summaryData.pemasukan.toLocaleString("id-ID", {
+      style: "currency",
+      currency: "IDR",
+    });
+    const formattedPengeluaran = summaryData.pengeluaran.toLocaleString("id-ID", {
+      style: "currency",
+      currency: "IDR",
+    });
+    const formattedSaldo = summaryData.saldo.toLocaleString("id-ID", {
+      style: "currency",
+      currency: "IDR",
+    });
+    
+    // Create summary message
+    const summaryMessage = `📊 *Ringkasan Keuangan Anda*\n\n💰 *Pemasukan:* ${formattedPemasukan}\n💸 *Pengeluaran:* ${formattedPengeluaran}\n🏦 *Saldo:* ${formattedSaldo}`;
+    
+    await ctx.reply(summaryMessage, { parse_mode: "Markdown" });
+    
+  } catch (error) {
+    console.error('Error getting summary data:', error);
+    await ctx.reply('❌ Gagal mengambil data ringkasan dari Google Sheet. Silakan coba lagi atau periksa konfigurasi Sheet Anda.');
+  }
 });
 
 bot.on("message", async (ctx, next) => {

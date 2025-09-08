@@ -128,6 +128,7 @@ Saya adalah bot yang akan membantu Anda mengelola keuangan pribadi dengan mudah\
 • /info\\_setup\\_gsheet \\- Informasi setup google sheet anda
 • /setkey YOUR\\_API\\_KEY \\- Simpan API key Gemini Anda
 • /setsheet YOUR\\_SHEET\\_ID \\- Simpan Google Sheet ID Anda
+• /saldo \\- Lihat ringkasan keuangan \\(pemasukan, pengeluaran, saldo\\)
 • /removekey \\- Hapus API key yang tersimpan
 
 Silakan kirim transaksi pertama Anda untuk memulai\\! 💰`;

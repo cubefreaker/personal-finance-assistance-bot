@@ -201,6 +201,54 @@ export async function saveToSheet({ date, text, amount, dbcr, category, createdB
   });
 }
 
+// ===== GET SUMMARY DATA =====
+export async function getSummaryData(sheetId) {
+  try {
+    const { sheets } = await initializeAuth();
+    
+    // Get the actual sheet information to get the first sheet name
+    const spreadsheetInfo = await sheets.spreadsheets.get({
+      spreadsheetId: sheetId,
+    });
+    
+    // Get the first sheet (index 0) regardless of its name
+    const firstSheet = spreadsheetInfo.data.sheets.find(sheet => sheet.properties.index === 0);
+    if (!firstSheet) {
+      throw new Error("No sheets found in the spreadsheet");
+    }
+    const sheetName = firstSheet.properties.title;
+    
+    // Read summary data from rows 1-3
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: sheetId,
+      range: `${sheetName}!A1:B3`, // Read only columns A and B for the summary
+    });
+    
+    const values = response.data.values || [];
+    
+    // Default values
+    let pemasukan = 0;
+    let pengeluaran = 0;
+    let saldo = 0;
+    
+    // Parse the summary data
+    if (values.length >= 3) {
+      pemasukan = parseFloat(values[0]?.[1]) || 0; // Row 1, Column B (Pemasukan)
+      pengeluaran = parseFloat(values[1]?.[1]) || 0; // Row 2, Column B (Pengeluaran)
+      saldo = parseFloat(values[2]?.[1]) || 0; // Row 3, Column B (Saldo)
+    }
+    
+    return {
+      pemasukan,
+      pengeluaran,
+      saldo
+    };
+  } catch (error) {
+    console.error("Error getting summary data:", error);
+    throw new Error("Failed to retrieve summary data from sheet");
+  }
+}
+
 // ===== GOOGLE SHEET VALIDATION =====
 export async function validateGoogleSheetId(sheetId) {
   try {
