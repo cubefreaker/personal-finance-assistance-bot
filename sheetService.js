@@ -65,14 +65,38 @@ export async function saveToSheet({ date, text, amount, dbcr, category, createdB
   
   const totalBalance = totalDebit - totalCredit;
   
+  // Get the actual sheet information to get the correct sheetId
+  const spreadsheetInfo = await sheets.spreadsheets.get({
+    spreadsheetId: sheetId,
+  });
+  
+  const transactionsSheet = spreadsheetInfo.data.sheets.find(sheet => 
+    sheet.properties.title === 'Transactions' || sheet.properties.index === 0
+  );
+  const actualSheetId = transactionsSheet ? transactionsSheet.properties.sheetId : 0;
+
+  // Check existing merged cells to avoid duplicate merging
+  const existingMerges = transactionsSheet?.merges || [];
+  
+  // Helper function to check if a range is already merged
+  const isRangeMerged = (startRow, endRow, startCol, endCol) => {
+    return existingMerges.some(merge => {
+      const mergeRange = merge;
+      return mergeRange.startRowIndex === startRow &&
+             mergeRange.endRowIndex === endRow &&
+             mergeRange.startColumnIndex === startCol &&
+             mergeRange.endColumnIndex === endCol;
+    });
+  };
+
   // Prepare all data to write
   const updates = [
     {
-      range: "Transactions!A1:B3",
+      range: "Transactions!A1:F3",
       values: [
-        ["Pemasukan", totalDebit],
-        ["Pengeluaran", totalCredit],
-        ["Saldo", totalBalance]
+        ["Pemasukan", totalDebit, "", "", "", ""], // Spread value across merged range
+        ["Pengeluaran", totalCredit, "", "", "", ""],
+        ["Saldo", totalBalance, "", "", "", ""]
       ]
     },
     {
@@ -92,50 +116,74 @@ export async function saveToSheet({ date, text, amount, dbcr, category, createdB
     }
   });
   
-  // Merge cells for summary rows
-  await sheets.spreadsheets.batchUpdate({
-    spreadsheetId: sheetId,
-    requestBody: {
-      requests: [
-        {
-          mergeCells: {
-            range: {
-              sheetId: 0, // Assuming first sheet (Transactions)
-              startRowIndex: 0, // Row 1 (0-indexed)
-              endRowIndex: 1,
-              startColumnIndex: 1, // Column B (0-indexed)
-              endColumnIndex: 5 // Column E (0-indexed, exclusive)
-            },
-            mergeType: "MERGE_ALL"
-          }
+  // Prepare merge requests only for ranges that aren't already merged
+  const mergeRequests = [];
+  
+  // Check and add merge request for row 1 (B1:F1)
+  if (!isRangeMerged(0, 1, 1, 6)) {
+    mergeRequests.push({
+      mergeCells: {
+        range: {
+          sheetId: actualSheetId,
+          startRowIndex: 0, // Row 1 (0-indexed)
+          endRowIndex: 1,
+          startColumnIndex: 1, // Column B (0-indexed)
+          endColumnIndex: 6 // Column F (0-indexed, exclusive)
         },
-        {
-          mergeCells: {
-            range: {
-              sheetId: 0, // Assuming first sheet (Transactions)
-              startRowIndex: 1, // Row 2 (0-indexed)
-              endRowIndex: 2,
-              startColumnIndex: 1, // Column B (0-indexed)
-              endColumnIndex: 5 // Column E (0-indexed, exclusive)
-            },
-            mergeType: "MERGE_ALL"
-          }
+        mergeType: "MERGE_ALL"
+      }
+    });
+  }
+  
+  // Check and add merge request for row 2 (B2:F2)
+  if (!isRangeMerged(1, 2, 1, 6)) {
+    mergeRequests.push({
+      mergeCells: {
+        range: {
+          sheetId: actualSheetId,
+          startRowIndex: 1, // Row 2 (0-indexed)
+          endRowIndex: 2,
+          startColumnIndex: 1, // Column B (0-indexed)
+          endColumnIndex: 6 // Column F (0-indexed, exclusive)
         },
-        {
-          mergeCells: {
-            range: {
-              sheetId: 0, // Assuming first sheet (Transactions)
-              startRowIndex: 2, // Row 3 (0-indexed)
-              endRowIndex: 3,
-              startColumnIndex: 1, // Column B (0-indexed)
-              endColumnIndex: 5 // Column E (0-indexed, exclusive)
-            },
-            mergeType: "MERGE_ALL"
-          }
+        mergeType: "MERGE_ALL"
+      }
+    });
+  }
+  
+  // Check and add merge request for row 3 (B3:F3)
+  if (!isRangeMerged(2, 3, 1, 6)) {
+    mergeRequests.push({
+      mergeCells: {
+        range: {
+          sheetId: actualSheetId,
+          startRowIndex: 2, // Row 3 (0-indexed)
+          endRowIndex: 3,
+          startColumnIndex: 1, // Column B (0-indexed)
+          endColumnIndex: 6 // Column F (0-indexed, exclusive)
+        },
+        mergeType: "MERGE_ALL"
+      }
+    });
+  }
+  
+  // Only execute merge requests if there are any to process
+  if (mergeRequests.length > 0) {
+    try {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: sheetId,
+        requestBody: {
+          requests: mergeRequests
         }
-      ]
+      });
+      console.log(`Successfully merged ${mergeRequests.length} cell ranges`);
+    } catch (error) {
+      console.error('Error merging cells:', error.message);
+      // Continue execution even if merging fails
     }
-  });
+  } else {
+    console.log('All summary rows are already merged');
+  }
   
   // Append the new transaction starting from row 6
   await sheets.spreadsheets.values.append({
