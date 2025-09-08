@@ -44,14 +44,44 @@ function encrypt(text) {
 }
 
 function decrypt(encryptedText) {
-  const textParts = encryptedText.split(':');
-  const iv = Buffer.from(textParts.shift(), 'hex');
-  const encryptedData = textParts.join(':');
-  const key = crypto.scryptSync(ENCRYPTION_KEY, 'salt', 32);
-  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
-  let decrypted = decipher.update(encryptedData, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
-  return decrypted;
+  try {
+    // Validate encrypted text format
+    if (!encryptedText || typeof encryptedText !== 'string') {
+      throw new Error('Invalid encrypted text: not a string or empty');
+    }
+    
+    const textParts = encryptedText.split(':');
+    if (textParts.length < 2) {
+      throw new Error('Invalid encrypted text format: missing IV or data');
+    }
+    
+    const iv = Buffer.from(textParts.shift(), 'hex');
+    const encryptedData = textParts.join(':');
+    
+    // Validate IV length (should be 16 bytes for AES-256-CBC)
+    if (iv.length !== 16) {
+      throw new Error('Invalid IV length: expected 16 bytes');
+    }
+    
+    // Validate encrypted data is not empty
+    if (!encryptedData) {
+      throw new Error('Invalid encrypted data: empty');
+    }
+    
+    const key = crypto.scryptSync(ENCRYPTION_KEY, 'salt', 32);
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+    let decrypted = decipher.update(encryptedData, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  } catch (error) {
+    console.error('Decryption error details:', {
+      error: error.message,
+      encryptedTextLength: encryptedText ? encryptedText.length : 0,
+      encryptionKeyLength: ENCRYPTION_KEY ? ENCRYPTION_KEY.length : 0,
+      encryptionKeyPrefix: ENCRYPTION_KEY ? ENCRYPTION_KEY.substring(0, 8) + '...' : 'undefined'
+    });
+    throw new Error(`Decryption failed: ${error.message}. This usually means the ENCRYPTION_KEY environment variable has changed or the encrypted data is corrupted.`);
+  }
 }
 
 export async function saveApiKey(userId, apiKey) {
@@ -92,9 +122,25 @@ export async function getApiKey(userId) {
       return null;
     }
     const data = doc.data();
+    
+    if (!data.apiKey) {
+      console.error('No API key found in document for user:', userId);
+      return null;
+    }
+    
     return decrypt(data.apiKey);
   } catch (error) {
-    console.error('Error retrieving API key:', error);
+    console.error('Error retrieving API key for user:', userId, error);
+    
+    // If it's a decryption error, log additional context
+    if (error.message.includes('Decryption failed')) {
+      console.error('Decryption failed for user:', userId, {
+        hasEncryptionKey: !!ENCRYPTION_KEY,
+        encryptionKeyLength: ENCRYPTION_KEY ? ENCRYPTION_KEY.length : 0,
+        environment: process.env.NODE_ENV || 'development'
+      });
+    }
+    
     return null;
   }
 }
@@ -157,5 +203,46 @@ export async function deleteApiKey(userId) {
   } catch (error) {
     console.error('Error deleting API key:', error);
     return false;
+  }
+}
+
+/**
+ * Debug function to check encryption/decryption status
+ * This helps diagnose issues with the ENCRYPTION_KEY
+ */
+export async function debugEncryptionStatus(userId) {
+  try {
+    const db = await initializeFirestore();
+    const doc = await db.collection('user_api_keys').doc(userId.toString()).get();
+    
+    if (!doc.exists) {
+      return { status: 'no_document', message: 'User document does not exist' };
+    }
+    
+    const data = doc.data();
+    if (!data.apiKey) {
+      return { status: 'no_api_key', message: 'No API key found in document' };
+    }
+    
+    // Try to decrypt
+    try {
+      const decrypted = decrypt(data.apiKey);
+      return { 
+        status: 'success', 
+        message: 'Decryption successful',
+        encryptedLength: data.apiKey.length,
+        decryptedLength: decrypted.length
+      };
+    } catch (decryptError) {
+      return {
+        status: 'decrypt_failed',
+        message: decryptError.message,
+        encryptedLength: data.apiKey.length,
+        encryptionKeyLength: ENCRYPTION_KEY ? ENCRYPTION_KEY.length : 0,
+        hasEncryptionKey: !!ENCRYPTION_KEY
+      };
+    }
+  } catch (error) {
+    return { status: 'error', message: error.message };
   }
 }
