@@ -43,44 +43,10 @@ export async function saveMultipleToSheet(transactions, sheetId) {
   }
   const sheetName = firstSheet.properties.title;
   
-  // First, get existing transactions to calculate totals
-  let existingData = [];
-  try {
-    const existingResponse = await sheets.spreadsheets.values.get({
-      spreadsheetId: sheetId,
-      range: `${sheetName}!A6:F`, // Read from row 6 onwards to the end
-    });
-    existingData = existingResponse.data.values || [];
-  } catch (error) {
-    console.log("No existing data found or error reading data:", error.message);
-  }
-
   // Prepare new transaction data
   const newTransactionRows = transactions.map(({ date, text, amount, dbcr, category, createdBy }) => 
     [date, text, amount, dbcr, category, createdBy]
   );
-
-  // Add the new transactions to existing data for calculation
-  const allTransactions = [...existingData, ...newTransactionRows];
-  
-  // Calculate totals
-  let totalDebit = 0;
-  let totalCredit = 0;
-  
-  allTransactions.forEach(row => {
-    if (row && row.length >= 4) {
-      const transactionAmount = parseFloat(row[2]) || 0;
-      const transactionType = (row[3] || '').toLowerCase();
-      
-      if (transactionType === 'debit') {
-        totalDebit += Math.abs(transactionAmount);
-      } else if (transactionType === 'credit') {
-        totalCredit += Math.abs(transactionAmount);
-      }
-    }
-  });
-  
-  const totalBalance = totalDebit - totalCredit;
   
   // Use the first sheet we already found
   const actualSheetId = firstSheet.properties.sheetId;
@@ -99,14 +65,14 @@ export async function saveMultipleToSheet(transactions, sheetId) {
     });
   };
 
-  // Prepare all data to write
+  // Prepare all data to write with formulas
   const updates = [
     {
       range: `${sheetName}!A1:F3`,
       values: [
-        ["Pemasukan", totalDebit, "", "", "", ""], // Spread value across merged range
-        ["Pengeluaran", totalCredit, "", "", "", ""],
-        ["Saldo", totalBalance, "", "", "", ""]
+        ["Pemasukan", "=SUMIF(D6:D,\"debit\",C6:C)", "", "", "", ""], // Formula to sum all debit amounts
+        ["Pengeluaran", "=ABS(SUMIF(D6:D,\"credit\",ABS(C6:C)))", "", "", "", ""], // Formula to sum all credit amounts (absolute value)
+        ["Saldo", "=B1-B2", "", "", "", ""] // Formula to calculate balance (Pemasukan - Pengeluaran)
       ]
     },
     {
@@ -223,39 +189,6 @@ export async function saveToSheet({ date, text, amount, dbcr, category, createdB
   }
   const sheetName = firstSheet.properties.title;
   
-  // First, get existing transactions to calculate totals
-  let existingData = [];
-  try {
-    const existingResponse = await sheets.spreadsheets.values.get({
-      spreadsheetId: sheetId,
-      range: `${sheetName}!A6:F`, // Read from row 6 onwards to the end
-    });
-    existingData = existingResponse.data.values || [];
-  } catch (error) {
-    console.log("No existing data found or error reading data:", error.message);
-  }
-
-  // Add the new transaction to existing data for calculation
-  const allTransactions = [...existingData, [date, text, amount, dbcr, category, createdBy]];
-  
-  // Calculate totals
-  let totalDebit = 0;
-  let totalCredit = 0;
-  
-  allTransactions.forEach(row => {
-    if (row && row.length >= 4) {
-      const transactionAmount = parseFloat(row[2]) || 0;
-      const transactionType = (row[3] || '').toLowerCase();
-      
-      if (transactionType === 'debit') {
-        totalDebit += Math.abs(transactionAmount);
-      } else if (transactionType === 'credit') {
-        totalCredit += Math.abs(transactionAmount);
-      }
-    }
-  });
-  
-  const totalBalance = totalDebit - totalCredit;
   
   // Use the first sheet we already found
   const actualSheetId = firstSheet.properties.sheetId;
@@ -274,14 +207,14 @@ export async function saveToSheet({ date, text, amount, dbcr, category, createdB
     });
   };
 
-  // Prepare all data to write
+  // Prepare all data to write with formulas
   const updates = [
     {
       range: `${sheetName}!A1:F3`,
       values: [
-        ["Pemasukan", totalDebit, "", "", "", ""], // Spread value across merged range
-        ["Pengeluaran", totalCredit, "", "", "", ""],
-        ["Saldo", totalBalance, "", "", "", ""]
+        ["Pemasukan", "=SUMIF(D6:D,\"debit\",C6:C)", "", "", "", ""], // Formula to sum all debit amounts
+        ["Pengeluaran", "=ABS(SUMIF(D6:D,\"credit\",ABS(C6:C)))", "", "", "", ""], // Formula to sum all credit amounts (absolute value)
+        ["Saldo", "=B1-B2", "", "", "", ""] // Formula to calculate balance (Pemasukan - Pengeluaran)
       ]
     },
     {
