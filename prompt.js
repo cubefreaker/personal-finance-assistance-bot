@@ -185,6 +185,7 @@ Guidelines for processing receipts:
 - Use Indonesian currency format recognition (Rp, IDR)
 - Common categories: "Food & Beverage", "Transportation", "Shopping", "Healthcare", "Entertainment", "Utilities", "Income", etc.
 - If receipt is unclear or not readable, respond with message type
+- Add restaurant or store name prefix with bracket in description if present (eg. "[STARBUCKS] Coffee Latte")
 
 IMPORTANT NOTE:
 - If the image is not a receipt or is unclear/unreadable, reply with proper message
