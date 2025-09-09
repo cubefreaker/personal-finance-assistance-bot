@@ -4,7 +4,7 @@ import fetch from "node-fetch";
 import dotenv from "dotenv";
 import { getTransactionPrompt, getWelcomeMessage, getSetupGeminiInstruction, getSetupGoogleSheetInstruction } from "./prompt.js";
 import { saveApiKey, getApiKey, hasApiKey, deleteApiKey, saveSheetId, getSheetId, hasSheetId, isUserSetupComplete } from "./apiKeyService.js";
-import { saveToSheet, validateGoogleSheetId, getSummaryData } from "./sheetService.js";
+import { saveToSheet, saveMultipleToSheet, validateGoogleSheetId, getSummaryData } from "./sheetService.js";
 dotenv.config();
 
 const app = express();
@@ -64,9 +64,9 @@ async function categorizeTransaction(message, apiKey) {
     }
   ).then((r) => r.json());
 
-  let parsed = { description: "", amount: 0, date: "", dbcr: "credit", category: "Uncategorized", message: "" };
+  let parsed = [{ description: "", amount: 0, date: "", dbcr: "credit", category: "Uncategorized", message: "" }];
   try {
-    const text = res?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+    const text = res?.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
 
     // Sanitize response to handle markdown code blocks
     let sanitizedText = text.trim();
@@ -78,7 +78,15 @@ async function categorizeTransaction(message, apiKey) {
       sanitizedText = sanitizedText.slice(3, -3).trim(); // Remove ``` and ```
     }
 
-    parsed = JSON.parse(sanitizedText);
+    const parsedResponse = JSON.parse(sanitizedText);
+    
+    // Handle both array and single object responses
+    if (Array.isArray(parsedResponse)) {
+      parsed = parsedResponse;
+    } else {
+      // Single object (message type or single transaction), return as-is for consistency
+      parsed = parsedResponse;
+    }
   } catch (e) {
     console.error("Gemini parse error:", e);
     console.error("Raw response text:", res?.candidates?.[0]?.content?.parts?.[0]?.text);
@@ -371,11 +379,87 @@ bot.on("message", async (ctx, next) => {
   
   const transactionData = await categorizeTransaction(message, userApiKey);
 
+  // Handle message response (single object)
   if (transactionData.type === "message") {
     await ctx.reply(transactionData.message);
     return;
   }
 
+  // Handle transaction responses (array)
+  if (Array.isArray(transactionData)) {
+    let transactionsToSave = [];
+    let formattedTransactions = [];
+    
+    // Prepare transactions for batch saving
+    for (const transaction of transactionData) {
+      if (transaction.type === "transaction") {
+        let date = new Date().toISOString().split("T")[0].split("-").reverse().join("-");
+        if (transaction.date) {
+          date = transaction.date;
+        } else if (transaction.dateDiff) {
+          date = new Date(new Date().setDate(new Date().getDate() + transaction.dateDiff)).toISOString().split("T")[0].split("-").reverse().join("-");
+        }
+        
+        let amount = transaction.dbcr.toLowerCase() === "credit" ? -transaction.amount : transaction.amount;
+        
+        // Add to batch save array
+        transactionsToSave.push({
+          date,
+          text: transaction.description,
+          amount,
+          dbcr: transaction.dbcr,
+          category: transaction.category,
+          createdBy: `${ctx.from.id} (${ctx.from?.first_name || ""} ${ctx.from?.last_name || ""})${ctx.from?.username ? ` @${ctx.from?.username}` : ""}`,
+        });
+        
+        // Format for response
+        let formattedDate = new Date(date).toLocaleDateString("id-ID", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        });
+        let formattedAmount = amount.toLocaleString("id-ID", {
+          style: "currency",
+          currency: "IDR",
+        });
+        
+        formattedTransactions.push({
+          date: formattedDate,
+          description: transaction.description,
+          amount: formattedAmount,
+          category: transaction.category,
+          dbcr: transaction.dbcr.toLowerCase() === "debit" ? "Debit" : transaction.dbcr.toLowerCase() === "credit" ? "Kredit" : transaction.dbcr
+        });
+      }
+    }
+    
+    // Save all transactions in one batch
+    if (transactionsToSave.length > 0) {
+      try {
+        await saveMultipleToSheet(transactionsToSave, userSheetId);
+        
+        let replyMessage = `✅ ${transactionsToSave.length} transaksi berhasil disimpan!\n\n`;
+        formattedTransactions.forEach((transaction, index) => {
+          replyMessage += `📋 Transaksi ${index + 1}:\n`;
+          replyMessage += `📅 Date: ${transaction.date}\n`;
+          replyMessage += `📝 Description: ${transaction.description}\n`;
+          replyMessage += `💰 Amount: ${transaction.amount}\n`;
+          replyMessage += `🏷️ Category: ${transaction.category}\n`;
+          replyMessage += `🔄 Tipe: ${transaction.dbcr}\n\n`;
+        });
+        
+        await ctx.reply(replyMessage.trim());
+      } catch (error) {
+        console.error("Error saving transactions:", error);
+        await ctx.reply("❌ Gagal menyimpan transaksi. Silakan coba lagi.");
+      }
+    } else {
+      await ctx.reply("❌ Tidak ada transaksi valid yang dapat disimpan.");
+    }
+    return;
+  }
+
+  // Fallback for single transaction object (backward compatibility)
   let date = new Date().toISOString().split("T")[0].split("-").reverse().join("-");
   if (transactionData.date) {
     date = transactionData.date;

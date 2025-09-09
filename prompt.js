@@ -1,9 +1,15 @@
 export const getTransactionPrompt = (message) => {
   return `You are an financial expert, you will be given a transaction log and you will determine the description, amount, date, debit or credit, and category of the transaction. give the response in json format. if there is message, you will say it in indonesian language.
-Output JSON with fields: {"type": string (transaction or message), "description": string, "dbcr": string (debit or credit), "amount": number, "date": string (YYYY-MM-DD) or null, "dateDiff": string (today, yesterday, last week or null) or null, "category": string (Camel Case), "message": string}.
-Example:
+
+If the input contains MULTIPLE transactions (can be separated by commas or spaces), return an ARRAY of transaction objects.
+If the input contains only ONE transaction, return an ARRAY with ONE transaction object.
+If the input is a message (not a transaction), return a SINGLE object with type "message".
+
+Output JSON ARRAY with fields: [{"type": string (transaction or message), "description": string, "dbcr": string (debit or credit), "amount": number, "date": string (YYYY-MM-DD) or null, "dateDiff": string (today, yesterday, last week or null) or null, "category": string (Camel Case), "message": string}].
+
+Example for single transaction:
 transaction log: "coffee latte 20000"
-{
+[{
 "type": "transaction",
 "description": "coffee latte",
 "dbcr": "credit",
@@ -12,13 +18,35 @@ transaction log: "coffee latte 20000"
 "dateDiff": null,
 "category": "Food & Beverage",
 "message": ""
-}
+}]
+
+Example for multiple transactions:
+transaction log: "Nasi goreng 10000, Es jeruk 4000"
+[{
+"type": "transaction",
+"description": "Nasi goreng",
+"dbcr": "credit",
+"amount": 10000,
+"date": null,
+"dateDiff": null,
+"category": "Food & Beverage",
+"message": ""
+},{
+"type": "transaction",
+"description": "Es jeruk",
+"dbcr": "credit",
+"amount": 4000,
+"date": null,
+"dateDiff": null,
+"category": "Food & Beverage",
+"message": ""
+}]
 Note for category:
 - if category is mentioned in the transaction log, use it.
 - if category is not mentioned in the transaction log, use the category that is most likely to be the correct one.
 Example:
 transaction log: "coffee latte 20000, minuman"
-{
+[{
 "type": "transaction",
 "description": "coffee latte",
 "dbcr": "credit",
@@ -27,14 +55,14 @@ transaction log: "coffee latte 20000, minuman"
 "dateDiff": null,
 "category": "Minuman",
 "message": ""
-}
+}]
 Note for dbcr:
 - if transaction is likely to be a credit, set dbcr to "credit".
 - if transaction is likely to be a debit, set dbcr to "debit".
 - if transaction is not clear, set dbcr to "credit".
 Example:
 transaction log: "coffee latte 20000"
-{
+[{
 "type": "transaction",
 "description": "coffee latte",
 "dbcr": "credit",
@@ -43,9 +71,9 @@ transaction log: "coffee latte 20000"
 "dateDiff": null,
 "category": "Food & Beverage",
 "message": ""
-}
+}]
 transaction log: "gaji 10000000"
-{
+[{
 "type": "transaction",
 "description": "gaji",
 "dbcr": "debit",
@@ -54,14 +82,14 @@ transaction log: "gaji 10000000"
 "dateDiff": null,
 "category": "Income",
 "message": ""
-}
+}]
 Note for date:
 - if date is mentioned in the transaction log, use it.
 - if date is not mentioned in the transaction log, use null.
 - if date is mentioned in the transaction log with format like "today", "yesterday", "last week". set dateDiff property to numeric value of the dateDiff (eg. +7, -1, -7) and date property to null.
 Example:
 transaction log: "coffee latte 20000, 20 januari 2025"
-{
+[{
 "type": "transaction",
 "description": "coffee latte",
 "dbcr": "credit",
@@ -70,9 +98,9 @@ transaction log: "coffee latte 20000, 20 januari 2025"
 "dateDiff": null,
 "category": "Food & Beverage",
 "message": ""
-}
+}]
 transaction log: "coffee latte 20000, yesterday"
-{
+[{
 "type": "transaction",
 "description": "coffee latte",
 "amount": 20000,
@@ -81,10 +109,11 @@ transaction log: "coffee latte 20000, yesterday"
 "dateDiff": -1,
 "category": "Food & Beverage",
 "message": ""
-}
+}]
 Note for message:
 - if transaction log is not clear, for example amount is not mentioned or it is a greeting message, reply with proper and related message. set type property to "message".
 - if transaction log is not related to finance transaction at all, reply with "Maaf, saya tidak bisa membantu dengan yang ini." and set type property to "message".
+- For messages (not transactions), return a SINGLE object, NOT an array.
 Example:
 transaction log: "coffee latte"
 {
@@ -115,6 +144,8 @@ Saya adalah bot yang akan membantu Anda mengelola keuangan pribadi dengan mudah\
 • "Nasi goreng 15000"
 • "Bensin 50000, transportasi"
 • "Belanja bulanan 200000, 15 januari 2025"
+• "Nasi goreng 10000, Es jeruk 4000" \\(multiple transactions\\)
+• "Kopi 15000, Roti 8000, Makan siang 25000" \\(multiple transactions\\)
 
 🔧 *Fitur:*
 • Otomatis kategorisasi transaksi menggunakan Gemini AI
