@@ -1,8 +1,9 @@
 import express from "express";
 import { Telegraf, Markup } from "telegraf";
+import { message } from "telegraf/filters";
 import fetch from "node-fetch";
 import dotenv from "dotenv";
-import { getTransactionPrompt, getWelcomeMessage, getSetupGeminiInstruction, getSetupGoogleSheetInstruction } from "./prompt.js";
+import { getTransactionPrompt, getReceiptImagePrompt, getWelcomeMessage, getSetupGeminiInstruction, getSetupGoogleSheetInstruction } from "./prompt.js";
 import { saveApiKey, getApiKey, hasApiKey, deleteApiKey, saveSheetId, getSheetId, hasSheetId, isUserSetupComplete } from "./apiKeyService.js";
 import { saveToSheet, saveMultipleToSheet, validateGoogleSheetId, getSummaryData } from "./sheetService.js";
 dotenv.config();
@@ -92,6 +93,100 @@ async function categorizeTransaction(message, apiKey) {
     console.error("Raw response text:", res?.candidates?.[0]?.content?.parts?.[0]?.text);
   }
   return parsed;
+}
+
+// ===== IMAGE PROCESSING =====
+async function downloadImageFromTelegram(fileId, apiKey) {
+  try {
+    // Get file info from Telegram
+    const fileInfoResponse = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${fileId}`);
+    const fileInfo = await fileInfoResponse.json();
+    
+    if (!fileInfo.ok) {
+      throw new Error('Failed to get file info from Telegram');
+    }
+    
+    // Download the image
+    const imageResponse = await fetch(`https://api.telegram.org/file/bot${BOT_TOKEN}/${fileInfo.result.file_path}`);
+    const imageBuffer = await imageResponse.buffer();
+    
+    return {
+      data: imageBuffer.toString('base64'),
+      mimeType: 'image/jpeg' // Telegram typically serves images as JPEG
+    };
+  } catch (error) {
+    console.error("Error downloading image:", error);
+    throw error;
+  }
+}
+
+async function analyzeReceiptImage(imageData, apiKey) {
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: getReceiptImagePrompt()
+                },
+                {
+                  inline_data: {
+                    mime_type: imageData.mimeType,
+                    data: imageData.data
+                  }
+                }
+              ],
+            },
+          ],
+        }),
+      }
+    ).then((r) => r.json());
+
+    let parsed = [{ description: "", amount: 0, date: "", dbcr: "credit", category: "Uncategorized", message: "" }];
+    try {
+      const text = res?.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+
+      // Sanitize response to handle markdown code blocks
+      let sanitizedText = text.trim();
+
+      // Remove markdown code blocks if present
+      if (sanitizedText.startsWith('```json') && sanitizedText.endsWith('```')) {
+        sanitizedText = sanitizedText.slice(7, -3).trim(); // Remove ```json and ```
+      } else if (sanitizedText.startsWith('```') && sanitizedText.endsWith('```')) {
+        sanitizedText = sanitizedText.slice(3, -3).trim(); // Remove ``` and ```
+      }
+
+      const parsedResponse = JSON.parse(sanitizedText);
+      
+      // Handle both array and single object responses
+      if (Array.isArray(parsedResponse)) {
+        parsed = parsedResponse;
+      } else {
+        // Single object (message type or single transaction), return as-is for consistency
+        parsed = parsedResponse;
+      }
+    } catch (e) {
+      console.error("Gemini parse error:", e);
+      console.error("Raw response text:", res?.candidates?.[0]?.content?.parts?.[0]?.text);
+      // Return a message response for parsing errors
+      parsed = {
+        type: "message",
+        message: "Maaf, saya tidak dapat memproses gambar receipt ini. Silakan coba lagi dengan gambar yang lebih jelas."
+      };
+    }
+    return parsed;
+  } catch (error) {
+    console.error("Error analyzing receipt image:", error);
+    return {
+      type: "message",
+      message: "Maaf, terjadi kesalahan saat memproses gambar. Silakan coba lagi."
+    };
+  }
 }
 
 // ===== TELEGRAM FLOW =====
@@ -274,6 +369,182 @@ bot.command('saldo', async (ctx) => {
   } catch (error) {
     console.error('Error getting summary data:', error);
     await ctx.reply('❌ Gagal mengambil data ringkasan dari Google Sheet. Silakan coba lagi atau periksa konfigurasi Sheet Anda.');
+  }
+});
+
+// Handle photo messages (receipt images)
+bot.on(message("photo"), async (ctx) => {
+  const userId = ctx.from.id;
+  
+  // Check if user has both API key and sheet ID
+  const userHasApiKey = await hasApiKey(userId);
+  const userHasSheetId = await hasSheetId(userId);
+  
+  if (!userHasApiKey && !userHasSheetId) {
+    await ctx.reply(`🔑 Anda belum menyimpan API key Gemini dan Google Sheet ID Anda.\n\nSilakan kirim:\n1. API key Gemini: /setkey YOUR_GEMINI_API_KEY\n2. Google Sheet ID: /setsheet YOUR_GOOGLE_SHEET_ID`);
+    return;
+  } else if (!userHasApiKey) {
+    await ctx.reply(`🔑 Anda sudah memiliki Google Sheet ID, tetapi masih perlu menyimpan API key Gemini Anda.\n\nSilakan kirim API key Gemini Anda dengan format:\n/setkey YOUR_GEMINI_API_KEY`);
+    return;
+  } else if (!userHasSheetId) {
+    await ctx.reply(`📊 Anda sudah memiliki API key Gemini, tetapi masih perlu menyimpan Google Sheet ID Anda.\n\nSilakan kirim Google Sheet ID Anda dengan format:\n/setsheet YOUR_GOOGLE_SHEET_ID`);
+    return;
+  }
+  
+  // Get user's API key and sheet ID
+  const userApiKey = await getApiKey(userId);
+  const userSheetId = await getSheetId(userId);
+  
+  if (!userApiKey) {
+    await ctx.reply('❌ Gagal mengambil API key Anda. Silakan coba lagi atau set ulang API key Anda.');
+    return;
+  }
+  
+  if (!userSheetId) {
+    await ctx.reply('❌ Gagal mengambil Google Sheet ID Anda. Silakan coba lagi atau set ulang Sheet ID Anda.');
+    return;
+  }
+  
+  try {
+    // Send processing message
+    await ctx.reply('📸 Sedang memproses gambar receipt Anda...');
+    
+    // Get the largest photo size (best quality)
+    const photo = ctx.message.photo[ctx.message.photo.length - 1];
+    
+    // Download and analyze the image
+    const imageData = await downloadImageFromTelegram(photo.file_id, userApiKey);
+    const transactionData = await analyzeReceiptImage(imageData, userApiKey);
+    
+    // Handle message response (single object)
+    if (transactionData.type === "message") {
+      await ctx.reply(transactionData.message);
+      return;
+    }
+
+    // Handle empty array (unclear input) - treat as message
+    if (Array.isArray(transactionData) && transactionData.length === 0) {
+      await ctx.reply("Maaf, saya tidak dapat membaca informasi transaksi dari gambar ini. Pastikan gambar receipt jelas dan berisi informasi transaksi.");
+      return;
+    }
+
+    // Handle transaction responses (array)
+    if (Array.isArray(transactionData)) {
+      let transactionsToSave = [];
+      let formattedTransactions = [];
+      
+      // Check if array contains message objects
+      for (const item of transactionData) {
+        if (item.type === "message") {
+          await ctx.reply(item.message);
+          return;
+        }
+      }
+      
+      // Prepare transactions for batch saving
+      for (const transaction of transactionData) {
+        if (transaction.type === "transaction") {
+          let date = new Date().toISOString().split("T")[0].split("-").reverse().join("-");
+          if (transaction.date) {
+            date = transaction.date;
+          } else if (transaction.dateDiff) {
+            date = new Date(new Date().setDate(new Date().getDate() + transaction.dateDiff)).toISOString().split("T")[0].split("-").reverse().join("-");
+          }
+          
+          let amount = transaction.dbcr.toLowerCase() === "credit" ? -transaction.amount : transaction.amount;
+          
+          // Add to batch save array
+          transactionsToSave.push({
+            date,
+            text: transaction.description,
+            amount,
+            dbcr: transaction.dbcr,
+            category: transaction.category,
+            createdBy: `${ctx.from.id} (${ctx.from?.first_name || ""} ${ctx.from?.last_name || ""})${ctx.from?.username ? ` @${ctx.from?.username}` : ""} [Receipt]`,
+          });
+          
+          // Format for response
+          let formattedDate = new Date(date).toLocaleDateString("id-ID", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+          });
+          let formattedAmount = amount.toLocaleString("id-ID", {
+            style: "currency",
+            currency: "IDR",
+          });
+          
+          formattedTransactions.push({
+            date: formattedDate,
+            description: transaction.description,
+            amount: formattedAmount,
+            category: transaction.category,
+            dbcr: transaction.dbcr.toLowerCase() === "debit" ? "Debit" : transaction.dbcr.toLowerCase() === "credit" ? "Kredit" : transaction.dbcr
+          });
+        }
+      }
+      
+      // Save all transactions in one batch
+      if (transactionsToSave.length > 0) {
+        try {
+          await saveMultipleToSheet(transactionsToSave, userSheetId);
+          
+          let replyMessage = `✅ ${transactionsToSave.length} transaksi dari receipt berhasil disimpan!\n\n`;
+          formattedTransactions.forEach((transaction, index) => {
+            replyMessage += `📋 Transaksi ${index + 1}:\n`;
+            replyMessage += `📅 Date: ${transaction.date}\n`;
+            replyMessage += `📝 Description: ${transaction.description}\n`;
+            replyMessage += `💰 Amount: ${transaction.amount}\n`;
+            replyMessage += `🏷️ Category: ${transaction.category}\n`;
+            replyMessage += `🔄 Tipe: ${transaction.dbcr}\n\n`;
+          });
+          
+          await ctx.reply(replyMessage.trim());
+        } catch (error) {
+          console.error("Error saving transactions from receipt:", error);
+          await ctx.reply("❌ Gagal menyimpan transaksi dari receipt. Silakan coba lagi.");
+        }
+      } else {
+        await ctx.reply("❌ Tidak ada transaksi valid yang dapat disimpan dari receipt ini.");
+      }
+      return;
+    }
+
+    // Fallback for single transaction object (backward compatibility)
+    let date = new Date().toISOString().split("T")[0].split("-").reverse().join("-");
+    if (transactionData.date) {
+      date = transactionData.date;
+    } else if (transactionData.dateDiff) {
+      date = new Date(new Date().setDate(new Date().getDate() + transactionData.dateDiff)).toISOString().split("T")[0].split("-").reverse().join("-");
+    }
+    
+    let amount = transactionData.dbcr.toLowerCase() === "credit" ? -transactionData.amount : transactionData.amount;
+    await saveToSheet({
+      date,
+      text: transactionData.description,
+      amount,
+      dbcr: transactionData.dbcr,
+      category: transactionData.category,
+      createdBy: `${ctx.from.id} (${ctx.from?.first_name || ""} ${ctx.from?.last_name || ""})${ctx.from?.username ? ` @${ctx.from?.username}` : ""} [Receipt]`,
+    }, userSheetId);
+
+    let formattedDate = new Date(date).toLocaleDateString("id-ID", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+    let formattedAmount = amount.toLocaleString("id-ID", {
+      style: "currency",
+      currency: "IDR",
+    });
+
+    await ctx.reply(
+      `✅ Transaksi dari receipt berhasil disimpan!\n\n📅 Date: ${formattedDate}\n📝 Description: ${transactionData.description}\n💰 Amount: ${formattedAmount}\n🏷️ Category: ${transactionData.category}\n🔄 Tipe: ${transactionData.dbcr.toLowerCase() === "debit" ? "Debit" : transactionData.dbcr.toLowerCase() === "credit" ? "Kredit" : transactionData.dbcr}`
+    );
+    
+  } catch (error) {
+    console.error("Error processing receipt image:", error);
+    await ctx.reply("❌ Gagal memproses gambar receipt. Silakan coba lagi dengan gambar yang lebih jelas.");
   }
 });
 

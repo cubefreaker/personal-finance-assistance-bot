@@ -133,6 +133,74 @@ Transaction log: ${message}
 `;
 };
 
+export const getReceiptImagePrompt = () => {
+  return `You are a financial expert who analyzes receipt images. You will extract transaction details from the receipt and return them in JSON format. Respond in Indonesian language for messages.
+
+Analyze the receipt image and extract ALL transactions/items shown on the receipt.
+
+If the receipt contains MULTIPLE items/transactions, return an ARRAY of transaction objects.
+If the receipt contains only ONE item/transaction, return an ARRAY with ONE transaction object.
+
+Output JSON ARRAY with fields: [{"type": string (transaction or message), "description": string, "dbcr": string (debit or credit), "amount": number, "date": string (YYYY-MM-DD) or null, "dateDiff": string (today, yesterday, last week or null) or null, "category": string (Camel Case), "message": string}].
+
+Example for single transaction receipt:
+Receipt showing: "Coffee Latte - Rp 20,000"
+[{
+"type": "transaction",
+"description": "Coffee Latte",
+"dbcr": "credit",
+"amount": 20000,
+"date": null,
+"dateDiff": null,
+"category": "Food & Beverage",
+"message": ""
+}]
+
+Example for multiple items receipt:
+Receipt showing: "1. Nasi Goreng - Rp 15,000", "2. Es Jeruk - Rp 5,000"
+[{
+"type": "transaction",
+"description": "Nasi Goreng",
+"dbcr": "credit",
+"amount": 15000,
+"date": null,
+"dateDiff": null,
+"category": "Food & Beverage",
+"message": ""
+},{
+"type": "transaction",
+"description": "Es Jeruk",
+"dbcr": "credit",
+"amount": 5000,
+"date": null,
+"dateDiff": null,
+"category": "Food & Beverage",
+"message": ""
+}]
+
+Guidelines for processing receipts:
+- Extract the date from the receipt if visible, otherwise use null
+- For each item: extract description, amount, and determine appropriate category
+- All receipt transactions are typically "credit" (expenses) unless clearly income
+- Use Indonesian currency format recognition (Rp, IDR)
+- Common categories: "Food & Beverage", "Transportation", "Shopping", "Healthcare", "Entertainment", "Utilities", "Income", etc.
+- If receipt is unclear or not readable, respond with message type
+
+IMPORTANT NOTE:
+- If the image is not a receipt or is unclear/unreadable, reply with proper message
+- If the image doesn't contain financial transaction information, reply with "Maaf, saya tidak dapat membaca struk/receipt dari gambar ini. Pastikan gambar jelas dan berisi informasi transaksi."
+
+Output JSON OBJECT for unclear images with fields: {"type": string (message), "message": string}.
+
+Example for unclear image:
+{
+"type": "message",
+"message": "Maaf, saya tidak dapat membaca struk/receipt dari gambar ini. Pastikan gambar jelas dan berisi informasi transaksi."
+}
+
+Please analyze the provided receipt image and extract all transaction details.`;
+};
+
 export const getWelcomeMessage = (env) => {
   return `🎉 *Selamat datang di Personal Finance Assistant Bot\\!* 🎉
 
@@ -141,6 +209,7 @@ Saya adalah bot yang akan membantu Anda mengelola keuangan pribadi dengan mudah\
 📝 *Cara Menggunakan:*
 • Kirim pesan transaksi Anda dalam format: "deskripsi jumlah"
 • Contoh: "kopi latte 25000" atau "makan siang 50000"
+• 📸 Kirim foto receipt/struk untuk otomatis extract transaksi
 • Saya akan otomatis mengkategorikan dan menyimpan transaksi Anda
 
 💡 *Contoh Pesan:*
@@ -149,9 +218,11 @@ Saya adalah bot yang akan membantu Anda mengelola keuangan pribadi dengan mudah\
 • "Belanja bulanan 200000, 15 januari 2025"
 • "Nasi goreng 10000, Es jeruk 4000" \\(multiple transactions\\)
 • "Kopi 15000, Roti 8000, Makan siang 25000" \\(multiple transactions\\)
+• 📸 Kirim foto receipt/struk belanja untuk otomatis extract
 
 🔧 *Fitur:*
 • Otomatis kategorisasi transaksi menggunakan Gemini AI
+• 📸 Ekstraksi otomatis dari foto receipt/struk belanja
 • Penyimpanan ke Google Sheets pribadi Anda
 • Format tanggal Indonesia
 • Menggunakan API key Gemini dan Google Sheet ID Anda sendiri
