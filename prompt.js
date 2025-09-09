@@ -3,7 +3,6 @@ export const getTransactionPrompt = (message) => {
 
 If the input contains MULTIPLE transactions (can be separated by commas or spaces), return an ARRAY of transaction objects.
 If the input contains only ONE transaction, return an ARRAY with ONE transaction object.
-If the input is a message (not a transaction), return a SINGLE object with type "message".
 
 Output JSON ARRAY with fields: [{"type": string (transaction or message), "description": string, "dbcr": string (debit or credit), "amount": number, "date": string (YYYY-MM-DD) or null, "dateDiff": string (today, yesterday, last week or null) or null, "category": string (Camel Case), "message": string}].
 
@@ -110,10 +109,14 @@ transaction log: "coffee latte 20000, yesterday"
 "category": "Food & Beverage",
 "message": ""
 }]
-Note for message:
-- if transaction log is not clear, for example amount is not mentioned or it is a greeting message, reply with proper and related message. set type property to "message".
-- if transaction log is not related to finance transaction at all, reply with "Maaf, saya tidak bisa membantu dengan yang ini." and set type property to "message".
-- For messages (not transactions), return a SINGLE object, NOT an array.
+
+IMPORTANT NOTE:
+- if transaction log is not clear, for example amount is not mentioned or it is a greeting message, reply with proper and related message
+- if transaction log is not related to finance transaction at all, reply with "Maaf, saya tidak bisa membantu dengan yang ini."
+- if transaction log is not clear, the response should be an object with 'type' property must be "message"
+
+Output JSON OBJECT with fields: {"type": string (message), "message": string}].
+
 Example:
 transaction log: "coffee latte"
 {
