@@ -287,13 +287,7 @@ export const getSetupGoogleSheetInstruction = () => {
    • Beri nama yang mudah diingat \\(contoh: "Personal Finance"\\)
 
 2\\. *Setup Sheet Structure:*
-   • Bot akan menggunakan sheet pertama \\(tidak perlu rename\\)
-   • Di baris 1, tambahkan header berikut:
-     \\- A1: Date
-     \\- B1: Description  
-     \\- C1: Amount
-     \\- D1: Debit/Credit
-     \\- E1: Category
+   • Tidak perlu setup atau edit apapun, Bot yang akan mengatur data dan tabel di sheet pertama
 
 3\\. *Share dengan Service Account:*
    • Klik tombol "Share" di kanan atas
@@ -302,7 +296,7 @@ export const getSetupGoogleSheetInstruction = () => {
    • Klik "Send"
 
 4\\. *Dapatkan Sheet ID:*
-   • Lihat URL di browser: \`https://docs\\.google\\.com/spreadsheets/d/SHEET\\_ID\\_HERE/edit\`
+   • Lihat URL di browser: \`https://docs\\.google\\.com/spreadsheets/d/SHEET\\_ID\\_HERE/edit\` (atau jika di mobile, bisa copy URL terlebih dahulu melalui tombol berbagi)
    • Sheet ID adalah bagian setelah \`/d/\` dan sebelum \`/edit\`
    • Contoh: \`1BxiMVs0XRA5nFdISDnKjdjandSbs74OgvE2upms\`
 
@@ -316,17 +310,10 @@ export const getSetupGoogleSheetInstruction = () => {
    • Jika berhasil, Sheet ID akan tersimpan
    • Jika gagal, periksa sharing permission
 
-📋 *Kolom yang Tersedia:*
-• *Date* \\- Tanggal transaksi \\(format: DD\\-MM\\-YYYY\\)
-• *Description* \\- Deskripsi transaksi
-• *Amount* \\- Jumlah transaksi \\(angka\\)
-• *Debit/Credit* \\- Jenis transaksi \\(Debit/Kredit\\)
-• *Category* \\- Kategori transaksi \\(otomatis\\)
-
 💡 *Tips:*
 • Sheet ID tidak boleh ada spasi di awal/akhir
 • Bot akan otomatis menggunakan sheet pertama
-• Backup data penting secara berkala
+• Backup manual data anda secara berkala
 
 ❓ *Masalah?*
 • Cek permission sharing \\(harus Editor\\)
