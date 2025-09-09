@@ -6,6 +6,20 @@ import dotenv from "dotenv";
 import { getTransactionPrompt, getReceiptImagePrompt, getWelcomeMessage, getSetupGeminiInstruction, getSetupGoogleSheetInstruction } from "./prompt.js";
 import { saveApiKey, getApiKey, hasApiKey, deleteApiKey, saveSheetId, getSheetId, hasSheetId, isUserSetupComplete } from "./apiKeyService.js";
 import { saveToSheet, saveMultipleToSheet, validateGoogleSheetId, getSummaryData } from "./sheetService.js";
+import { 
+  validateUserSetup, 
+  getUserCredentials, 
+  formatAmountToCurrency, 
+  parseGeminiResponse, 
+  processAndSaveTransactions,
+  processSingleTransaction,
+  processTransactionDate,
+  processTransactionAmount,
+  createSheetTransaction,
+  createFormattedTransaction,
+  ERROR_MESSAGES,
+  SUCCESS_MESSAGES
+} from "./utils.js";
 dotenv.config();
 
 const app = express();
@@ -65,34 +79,7 @@ async function categorizeTransaction(message, apiKey) {
     }
   ).then((r) => r.json());
 
-  let parsed = [{ description: "", amount: 0, date: "", dbcr: "credit", category: "Uncategorized", message: "" }];
-  try {
-    const text = res?.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
-
-    // Sanitize response to handle markdown code blocks
-    let sanitizedText = text.trim();
-
-    // Remove markdown code blocks if present
-    if (sanitizedText.startsWith('```json') && sanitizedText.endsWith('```')) {
-      sanitizedText = sanitizedText.slice(7, -3).trim(); // Remove ```json and ```
-    } else if (sanitizedText.startsWith('```') && sanitizedText.endsWith('```')) {
-      sanitizedText = sanitizedText.slice(3, -3).trim(); // Remove ``` and ```
-    }
-
-    const parsedResponse = JSON.parse(sanitizedText);
-    
-    // Handle both array and single object responses
-    if (Array.isArray(parsedResponse)) {
-      parsed = parsedResponse;
-    } else {
-      // Single object (message type or single transaction), return as-is for consistency
-      parsed = parsedResponse;
-    }
-  } catch (e) {
-    console.error("Gemini parse error:", e);
-    console.error("Raw response text:", res?.candidates?.[0]?.content?.parts?.[0]?.text);
-  }
-  return parsed;
+  return parseGeminiResponse(res);
 }
 
 // ===== IMAGE PROCESSING =====
@@ -147,38 +134,16 @@ async function analyzeReceiptImage(imageData, apiKey) {
       }
     ).then((r) => r.json());
 
-    let parsed = [{ description: "", amount: 0, date: "", dbcr: "credit", category: "Uncategorized", message: "" }];
-    try {
-      const text = res?.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
-
-      // Sanitize response to handle markdown code blocks
-      let sanitizedText = text.trim();
-
-      // Remove markdown code blocks if present
-      if (sanitizedText.startsWith('```json') && sanitizedText.endsWith('```')) {
-        sanitizedText = sanitizedText.slice(7, -3).trim(); // Remove ```json and ```
-      } else if (sanitizedText.startsWith('```') && sanitizedText.endsWith('```')) {
-        sanitizedText = sanitizedText.slice(3, -3).trim(); // Remove ``` and ```
-      }
-
-      const parsedResponse = JSON.parse(sanitizedText);
-      
-      // Handle both array and single object responses
-      if (Array.isArray(parsedResponse)) {
-        parsed = parsedResponse;
-      } else {
-        // Single object (message type or single transaction), return as-is for consistency
-        parsed = parsedResponse;
-      }
-    } catch (e) {
-      console.error("Gemini parse error:", e);
-      console.error("Raw response text:", res?.candidates?.[0]?.content?.parts?.[0]?.text);
-      // Return a message response for parsing errors
-      parsed = {
+    let parsed = parseGeminiResponse(res);
+    
+    // If parsing failed, return error message for receipt processing
+    if (Array.isArray(parsed) && parsed.length === 1 && !parsed[0].description) {
+      return {
         type: "message",
         message: "Maaf, saya tidak dapat memproses gambar receipt ini. Silakan coba lagi dengan gambar yang lebih jelas."
       };
     }
+    
     return parsed;
   } catch (error) {
     console.error("Error analyzing receipt image:", error);
@@ -320,46 +285,28 @@ bot.action('info_setup_gsheet', async (ctx) => {
 bot.command('saldo', async (ctx) => {
   const userId = ctx.from.id;
   
-  // Check if user has both API key and sheet ID
-  const userHasApiKey = await hasApiKey(userId);
-  const userHasSheetId = await hasSheetId(userId);
-  
-  if (!userHasApiKey && !userHasSheetId) {
-    await ctx.reply(`🔑 Anda belum menyimpan API key Gemini dan Google Sheet ID Anda.\n\nSilakan kirim:\n1. API key Gemini: /setkey YOUR_GEMINI_API_KEY\n2. Google Sheet ID: /setsheet YOUR_GOOGLE_SHEET_ID`);
-    return;
-  } else if (!userHasApiKey) {
-    await ctx.reply(`🔑 Anda sudah memiliki Google Sheet ID, tetapi masih perlu menyimpan API key Gemini Anda.\n\nSilakan kirim API key Gemini Anda dengan format:\n/setkey YOUR_GEMINI_API_KEY`);
-    return;
-  } else if (!userHasSheetId) {
-    await ctx.reply(`📊 Anda sudah memiliki API key Gemini, tetapi masih perlu menyimpan Google Sheet ID Anda.\n\nSilakan kirim Google Sheet ID Anda dengan format:\n/setsheet YOUR_GOOGLE_SHEET_ID`);
+  // Validate user setup
+  const validation = await validateUserSetup(userId);
+  if (!validation.isValid) {
+    await ctx.reply(validation.message);
     return;
   }
   
   try {
-    // Get user's sheet ID
-    const userSheetId = await getSheetId(userId);
-    
-    if (!userSheetId) {
-      await ctx.reply('❌ Gagal mengambil Google Sheet ID Anda. Silakan coba lagi atau set ulang Sheet ID Anda.');
+    // Get user credentials
+    const credentials = await getUserCredentials(userId);
+    if (!credentials.success) {
+      await ctx.reply(credentials.message);
       return;
     }
     
     // Get summary data from sheet
-    const summaryData = await getSummaryData(userSheetId);
+    const summaryData = await getSummaryData(credentials.sheetId);
     
     // Format currency values
-    const formattedPemasukan = summaryData.pemasukan.toLocaleString("id-ID", {
-      style: "currency",
-      currency: "IDR",
-    });
-    const formattedPengeluaran = summaryData.pengeluaran.toLocaleString("id-ID", {
-      style: "currency",
-      currency: "IDR",
-    });
-    const formattedSaldo = summaryData.saldo.toLocaleString("id-ID", {
-      style: "currency",
-      currency: "IDR",
-    });
+    const formattedPemasukan = formatAmountToCurrency(summaryData.pemasukan);
+    const formattedPengeluaran = formatAmountToCurrency(summaryData.pengeluaran);
+    const formattedSaldo = formatAmountToCurrency(summaryData.saldo);
     
     // Create summary message
     const summaryMessage = `📊 *Ringkasan Keuangan Anda*\n\n💰 *Pemasukan:* ${formattedPemasukan}\n💸 *Pengeluaran:* ${formattedPengeluaran}\n🏦 *Saldo:* ${formattedSaldo}`;
@@ -444,43 +391,14 @@ bot.on(message("photo"), async (ctx) => {
       // Prepare transactions for batch saving
       for (const transaction of transactionData) {
         if (transaction.type === "transaction") {
-          let date = new Date().toISOString().split("T")[0].split("-").reverse().join("-");
-          if (transaction.date) {
-            date = transaction.date;
-          } else if (transaction.dateDiff) {
-            date = new Date(new Date().setDate(new Date().getDate() + transaction.dateDiff)).toISOString().split("T")[0].split("-").reverse().join("-");
-          }
-          
-          let amount = transaction.dbcr.toLowerCase() === "credit" ? -transaction.amount : transaction.amount;
+          const date = processTransactionDate(transaction);
+          const amount = processTransactionAmount(transaction);
           
           // Add to batch save array
-          transactionsToSave.push({
-            date,
-            text: transaction.description,
-            amount,
-            dbcr: transaction.dbcr,
-            category: transaction.category,
-            createdBy: `${ctx.from.id} (${ctx.from?.first_name || ""} ${ctx.from?.last_name || ""})${ctx.from?.username ? ` @${ctx.from?.username}` : ""} [Receipt]`,
-          });
+          transactionsToSave.push(createSheetTransaction(transaction, date, amount, ctx.from, "Receipt"));
           
           // Format for response
-          let formattedDate = new Date(date).toLocaleDateString("id-ID", {
-            day: "2-digit",
-            month: "2-digit",
-            year: "numeric",
-          });
-          let formattedAmount = amount.toLocaleString("id-ID", {
-            style: "currency",
-            currency: "IDR",
-          });
-          
-          formattedTransactions.push({
-            date: formattedDate,
-            description: transaction.description,
-            amount: formattedAmount,
-            category: transaction.category,
-            dbcr: transaction.dbcr.toLowerCase() === "debit" ? "Debit" : transaction.dbcr.toLowerCase() === "credit" ? "Kredit" : transaction.dbcr
-          });
+          formattedTransactions.push(createFormattedTransaction(transaction, date, amount));
         }
       }
       
@@ -511,35 +429,144 @@ bot.on(message("photo"), async (ctx) => {
     }
 
     // Fallback for single transaction object (backward compatibility)
-    let date = new Date().toISOString().split("T")[0].split("-").reverse().join("-");
-    if (transactionData.date) {
-      date = transactionData.date;
-    } else if (transactionData.dateDiff) {
-      date = new Date(new Date().setDate(new Date().getDate() + transactionData.dateDiff)).toISOString().split("T")[0].split("-").reverse().join("-");
-    }
-    
-    let amount = transactionData.dbcr.toLowerCase() === "credit" ? -transactionData.amount : transactionData.amount;
-    await saveToSheet({
-      date,
-      text: transactionData.description,
-      amount,
-      dbcr: transactionData.dbcr,
-      category: transactionData.category,
-      createdBy: `${ctx.from.id} (${ctx.from?.first_name || ""} ${ctx.from?.last_name || ""})${ctx.from?.username ? ` @${ctx.from?.username}` : ""} [Receipt]`,
-    }, userSheetId);
+    const date = processTransactionDate(transactionData);
+    const amount = processTransactionAmount(transactionData);
+    await saveToSheet(createSheetTransaction(transactionData, date, amount, ctx.from, "Receipt"), userSheetId);
 
-    let formattedDate = new Date(date).toLocaleDateString("id-ID", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-    let formattedAmount = amount.toLocaleString("id-ID", {
-      style: "currency",
-      currency: "IDR",
-    });
-
+    const formattedTransaction = createFormattedTransaction(transactionData, date, amount);
     await ctx.reply(
-      `✅ Transaksi dari receipt berhasil disimpan!\n\n📅 Date: ${formattedDate}\n📝 Description: ${transactionData.description}\n💰 Amount: ${formattedAmount}\n🏷️ Category: ${transactionData.category}\n🔄 Tipe: ${transactionData.dbcr.toLowerCase() === "debit" ? "Debit" : transactionData.dbcr.toLowerCase() === "credit" ? "Kredit" : transactionData.dbcr}`
+      `✅ Transaksi dari receipt berhasil disimpan!\n\n📅 Date: ${formattedTransaction.date}\n📝 Description: ${formattedTransaction.description}\n💰 Amount: ${formattedTransaction.amount}\n🏷️ Category: ${formattedTransaction.category}\n🔄 Tipe: ${formattedTransaction.dbcr}`
+    );
+    
+  } catch (error) {
+    console.error("Error processing receipt image:", error);
+    await ctx.reply("❌ Gagal memproses gambar receipt. Silakan coba lagi dengan gambar yang lebih jelas.");
+  }
+});
+
+// Handle document messages (uncompressed images)
+bot.on(message("document"), async (ctx) => {
+  const userId = ctx.from.id;
+  const document = ctx.message.document;
+  
+  // Check if the document is an image
+  if (!document.mime_type || !document.mime_type.startsWith('image/')) {
+    return; // Not an image, ignore
+  }
+  
+  // Check if user has both API key and sheet ID
+  const userHasApiKey = await hasApiKey(userId);
+  const userHasSheetId = await hasSheetId(userId);
+  
+  if (!userHasApiKey && !userHasSheetId) {
+    await ctx.reply(`🔑 Anda belum menyimpan API key Gemini dan Google Sheet ID Anda.\n\nSilakan kirim:\n1. API key Gemini: /setkey YOUR_GEMINI_API_KEY\n2. Google Sheet ID: /setsheet YOUR_GOOGLE_SHEET_ID`);
+    return;
+  } else if (!userHasApiKey) {
+    await ctx.reply(`🔑 Anda sudah memiliki Google Sheet ID, tetapi masih perlu menyimpan API key Gemini Anda.\n\nSilakan kirim API key Gemini Anda dengan format:\n/setkey YOUR_GEMINI_API_KEY`);
+    return;
+  } else if (!userHasSheetId) {
+    await ctx.reply(`📊 Anda sudah memiliki API key Gemini, tetapi masih perlu menyimpan Google Sheet ID Anda.\n\nSilakan kirim Google Sheet ID Anda dengan format:\n/setsheet YOUR_GOOGLE_SHEET_ID`);
+    return;
+  }
+  
+  // Get user's API key and sheet ID
+  const userApiKey = await getApiKey(userId);
+  const userSheetId = await getSheetId(userId);
+  
+  if (!userApiKey) {
+    await ctx.reply('❌ Gagal mengambil API key Anda. Silakan coba lagi atau set ulang API key Anda.');
+    return;
+  }
+  
+  if (!userSheetId) {
+    await ctx.reply('❌ Gagal mengambil Google Sheet ID Anda. Silakan coba lagi atau set ulang Sheet ID Anda.');
+    return;
+  }
+  
+  try {
+    // Send processing message
+    await ctx.reply('📸 Sedang memproses gambar receipt Anda...');
+    
+    // Download and analyze the image document
+    const imageData = await downloadImageFromTelegram(document.file_id, userApiKey);
+    // Update mime type based on the actual document
+    imageData.mimeType = document.mime_type;
+    
+    const transactionData = await analyzeReceiptImage(imageData, userApiKey);
+    
+    // Handle message response (single object)
+    if (transactionData.type === "message") {
+      await ctx.reply(transactionData.message);
+      return;
+    }
+
+    // Handle empty array (unclear input) - treat as message
+    if (Array.isArray(transactionData) && transactionData.length === 0) {
+      await ctx.reply("Maaf, saya tidak dapat membaca informasi transaksi dari gambar ini. Pastikan gambar receipt jelas dan berisi informasi transaksi.");
+      return;
+    }
+
+    // Handle transaction responses (array)
+    if (Array.isArray(transactionData)) {
+      let transactionsToSave = [];
+      let formattedTransactions = [];
+      
+      // Check if array contains message objects
+      for (const item of transactionData) {
+        if (item.type === "message") {
+          await ctx.reply(item.message);
+          return;
+        }
+      }
+      
+      // Prepare transactions for batch saving
+      for (const transaction of transactionData) {
+        if (transaction.type === "transaction") {
+          const date = processTransactionDate(transaction);
+          const amount = processTransactionAmount(transaction);
+          
+          // Add to batch save array
+          transactionsToSave.push(createSheetTransaction(transaction, date, amount, ctx.from, "Receipt"));
+          
+          // Format for response
+          formattedTransactions.push(createFormattedTransaction(transaction, date, amount));
+        }
+      }
+      
+      // Save all transactions in one batch
+      if (transactionsToSave.length > 0) {
+        try {
+          await saveMultipleToSheet(transactionsToSave, userSheetId);
+          
+          let replyMessage = `✅ ${transactionsToSave.length} transaksi dari receipt berhasil disimpan!\n\n`;
+          formattedTransactions.forEach((transaction, index) => {
+            replyMessage += `📋 Transaksi ${index + 1}:\n`;
+            replyMessage += `📅 Date: ${transaction.date}\n`;
+            replyMessage += `📝 Description: ${transaction.description}\n`;
+            replyMessage += `💰 Amount: ${transaction.amount}\n`;
+            replyMessage += `🏷️ Category: ${transaction.category}\n`;
+            replyMessage += `🔄 Tipe: ${transaction.dbcr}\n\n`;
+          });
+          
+          await ctx.reply(replyMessage.trim());
+        } catch (error) {
+          console.error("Error saving transactions from receipt:", error);
+          await ctx.reply("❌ Gagal menyimpan transaksi dari receipt. Silakan coba lagi.");
+        }
+      } else {
+        await ctx.reply("❌ Tidak ada transaksi valid yang dapat disimpan dari receipt ini.");
+      }
+      return;
+    }
+
+    // Fallback for single transaction object (backward compatibility)
+    const date = processTransactionDate(transactionData);
+    const amount = processTransactionAmount(transactionData);
+    await saveToSheet(createSheetTransaction(transactionData, date, amount, ctx.from, "Receipt"), userSheetId);
+
+    const formattedTransaction = createFormattedTransaction(transactionData, date, amount);
+    await ctx.reply(
+      `✅ Transaksi dari receipt berhasil disimpan!\n\n📅 Date: ${formattedTransaction.date}\n📝 Description: ${formattedTransaction.description}\n💰 Amount: ${formattedTransaction.amount}\n🏷️ Category: ${formattedTransaction.category}\n🔄 Tipe: ${formattedTransaction.dbcr}`
     );
     
   } catch (error) {
@@ -678,43 +705,14 @@ bot.on("message", async (ctx, next) => {
     // Prepare transactions for batch saving
     for (const transaction of transactionData) {
       if (transaction.type === "transaction") {
-        let date = new Date().toISOString().split("T")[0].split("-").reverse().join("-");
-        if (transaction.date) {
-          date = transaction.date;
-        } else if (transaction.dateDiff) {
-          date = new Date(new Date().setDate(new Date().getDate() + transaction.dateDiff)).toISOString().split("T")[0].split("-").reverse().join("-");
-        }
-        
-        let amount = transaction.dbcr.toLowerCase() === "credit" ? -transaction.amount : transaction.amount;
+        const date = processTransactionDate(transaction);
+        const amount = processTransactionAmount(transaction);
         
         // Add to batch save array
-        transactionsToSave.push({
-          date,
-          text: transaction.description,
-          amount,
-          dbcr: transaction.dbcr,
-          category: transaction.category,
-          createdBy: `${ctx.from.id} (${ctx.from?.first_name || ""} ${ctx.from?.last_name || ""})${ctx.from?.username ? ` @${ctx.from?.username}` : ""}`,
-        });
+        transactionsToSave.push(createSheetTransaction(transaction, date, amount, ctx.from, ""));
         
         // Format for response
-        let formattedDate = new Date(date).toLocaleDateString("id-ID", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric",
-        });
-        let formattedAmount = amount.toLocaleString("id-ID", {
-          style: "currency",
-          currency: "IDR",
-        });
-        
-        formattedTransactions.push({
-          date: formattedDate,
-          description: transaction.description,
-          amount: formattedAmount,
-          category: transaction.category,
-          dbcr: transaction.dbcr.toLowerCase() === "debit" ? "Debit" : transaction.dbcr.toLowerCase() === "credit" ? "Kredit" : transaction.dbcr
-        });
+        formattedTransactions.push(createFormattedTransaction(transaction, date, amount));
       }
     }
     
@@ -745,35 +743,13 @@ bot.on("message", async (ctx, next) => {
   }
 
   // Fallback for single transaction object (backward compatibility)
-  let date = new Date().toISOString().split("T")[0].split("-").reverse().join("-");
-  if (transactionData.date) {
-    date = transactionData.date;
-  } else if (transactionData.dateDiff) {
-    date = new Date(new Date().setDate(new Date().getDate() + transactionData.dateDiff)).toISOString().split("T")[0].split("-").reverse().join("-");
-  }
-  
-  let amount = transactionData.dbcr.toLowerCase() === "credit" ? -transactionData.amount : transactionData.amount;
-  await saveToSheet({
-    date,
-    text: transactionData.description,
-    amount,
-    dbcr: transactionData.dbcr,
-    category: transactionData.category,
-    createdBy: `${ctx.from.id} (${ctx.from?.first_name || ""} ${ctx.from?.last_name || ""})${ctx.from?.username ? ` @${ctx.from?.username}` : ""}`,
-  }, userSheetId);
+  const date = processTransactionDate(transactionData);
+  const amount = processTransactionAmount(transactionData);
+  await saveToSheet(createSheetTransaction(transactionData, date, amount, ctx.from, ""), userSheetId);
 
-  let formattedDate = new Date(date).toLocaleDateString("id-ID", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-  let formattedAmount = amount.toLocaleString("id-ID", {
-    style: "currency",
-    currency: "IDR",
-  });
-
+  const formattedTransaction = createFormattedTransaction(transactionData, date, amount);
   await ctx.reply(
-    `✅ Transaksi berhasil disimpan!\n\n📅 Date: ${formattedDate}\n📝 Description: ${transactionData.description}\n💰 Amount: ${formattedAmount}\n🏷️ Category: ${transactionData.category}\n🔄 Tipe: ${transactionData.dbcr.toLowerCase() === "debit" ? "Debit" : transactionData.dbcr.toLowerCase() === "credit" ? "Kredit" : transactionData.dbcr}`
+    `✅ Transaksi berhasil disimpan!\n\n📅 Date: ${formattedTransaction.date}\n📝 Description: ${formattedTransaction.description}\n💰 Amount: ${formattedTransaction.amount}\n🏷️ Category: ${formattedTransaction.category}\n🔄 Tipe: ${formattedTransaction.dbcr}`
   );
 });
 
