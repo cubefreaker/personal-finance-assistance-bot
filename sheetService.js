@@ -71,7 +71,7 @@ export async function saveMultipleToSheet(transactions, sheetId) {
       range: `${sheetName}!A1:F3`,
       values: [
         ["Pemasukan", "=SUMIF(D6:D,\"debit\",C6:C)", "", "", "", ""], // Formula to sum all debit amounts
-        ["Pengeluaran", "=ABS(SUMIF(D6:D,\"credit\",ABS(C6:C)))", "", "", "", ""], // Formula to sum all credit amounts (absolute value)
+        ["Pengeluaran", "=ABS(SUMIF(D6:D,\"credit\",C6:C))", "", "", "", ""], // Formula to sum all credit amounts (absolute value)
         ["Saldo", "=B1-B2", "", "", "", ""] // Formula to calculate balance (Pemasukan - Pengeluaran)
       ]
     },
@@ -213,7 +213,7 @@ export async function saveToSheet({ date, text, amount, dbcr, category, createdB
       range: `${sheetName}!A1:F3`,
       values: [
         ["Pemasukan", "=SUMIF(D6:D,\"debit\",C6:C)", "", "", "", ""], // Formula to sum all debit amounts
-        ["Pengeluaran", "=ABS(SUMIF(D6:D,\"credit\",ABS(C6:C)))", "", "", "", ""], // Formula to sum all credit amounts (absolute value)
+        ["Pengeluaran", "=ABS(SUMIF(D6:D,\"credit\",C6:C))", "", "", "", ""], // Formula to sum all credit amounts (absolute value)
         ["Saldo", "=B1-B2", "", "", "", ""] // Formula to calculate balance (Pemasukan - Pengeluaran)
       ]
     },
