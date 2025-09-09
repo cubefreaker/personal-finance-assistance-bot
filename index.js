@@ -385,10 +385,24 @@ bot.on("message", async (ctx, next) => {
     return;
   }
 
+  // Handle empty array (unclear input) - treat as message
+  if (Array.isArray(transactionData) && transactionData.length === 0) {
+    await ctx.reply("Silahkan berikan informasi transaksi Anda dengan benar. Contoh: 'Nasi goreng 100000' atau 'Nasi goreng 100000, makanan' atau 'Nasi goreng 100000, makanan, 20 januari 2025'");
+    return;
+  }
+
   // Handle transaction responses (array)
   if (Array.isArray(transactionData)) {
     let transactionsToSave = [];
     let formattedTransactions = [];
+    
+    // Check if array contains message objects
+    for (const item of transactionData) {
+      if (item.type === "message") {
+        await ctx.reply(item.message);
+        return;
+      }
+    }
     
     // Prepare transactions for batch saving
     for (const transaction of transactionData) {
