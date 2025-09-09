@@ -186,6 +186,7 @@ Guidelines for processing receipts:
 - Common categories: "Food & Beverage", "Transportation", "Shopping", "Healthcare", "Entertainment", "Utilities", "Income", etc.
 - If receipt is unclear or not readable, respond with message type
 - Add restaurant or store name prefix with bracket in description if present (eg. "[STARBUCKS] Coffee Latte")
+- Add item count and price per item suffix in description if present (eg. "[STARBUCKS] Coffee Latte (2x @10,000)")
 
 IMPORTANT NOTE:
 - If the image is not a receipt or is unclear/unreadable, reply with proper message
