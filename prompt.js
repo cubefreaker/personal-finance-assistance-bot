@@ -296,7 +296,7 @@ export const getSetupGoogleSheetInstruction = () => {
    • Klik "Send"
 
 4\\. *Dapatkan Sheet ID:*
-   • Lihat URL di browser: \`https://docs\\.google\\.com/spreadsheets/d/SHEET\\_ID\\_HERE/edit\` (atau jika di mobile, bisa copy URL terlebih dahulu melalui tombol berbagi)
+   • Lihat URL di browser: \`https://docs\\.google\\.com/spreadsheets/d/SHEET\\_ID\\_HERE/edit\` \\(atau jika di mobile, bisa copy URL terlebih dahulu melalui tombol berbagi\\)
    • Sheet ID adalah bagian setelah \`/d/\` dan sebelum \`/edit\`
    • Contoh: \`1BxiMVs0XRA5nFdISDnKjdjandSbs74OgvE2upms\`
 
