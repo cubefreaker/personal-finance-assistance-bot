@@ -31,38 +31,144 @@ async function initializeAuth() {
 // ===== SHARED HELPER FUNCTIONS =====
 
 /**
- * Detect the formula separator used in the Google Sheet based on locale
+ * Test if a formula works correctly by writing it to a test cell and checking for errors
+ * @param {Object} sheets - Google Sheets API instance
+ * @param {string} sheetId - The Google Sheet ID
+ * @param {string} sheetName - The sheet name
+ * @param {string} testFormula - The formula to test
+ * @returns {boolean} - True if formula works without errors, false otherwise
+ */
+async function testFormula(sheets, sheetId, sheetName, testFormula) {
+  try {
+    // Write the test formula to a temporary cell (Z1)
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: sheetId,
+      range: `${sheetName}!Z1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [[testFormula]]
+      }
+    });
+    
+    // Wait a moment for the formula to calculate
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Read the cell value to check for errors
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: sheetId,
+      range: `${sheetName}!Z1`
+    });
+    
+    const cellValue = response.data.values?.[0]?.[0];
+    
+    // Check if the cell contains an error (starts with #)
+    const hasError = cellValue && cellValue.toString().startsWith('#');
+    
+    // Clean up the test cell
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: sheetId,
+      range: `${sheetName}!Z1`
+    });
+    
+    return !hasError;
+  } catch (error) {
+    console.warn('Error testing formula:', error.message);
+    return false;
+  }
+}
+
+/**
+ * Detect the correct formula separator by testing actual formulas
  * @param {Object} sheets - Google Sheets API instance
  * @param {string} sheetId - The Google Sheet ID
  * @param {string} sheetName - The sheet name
  * @returns {string} - The appropriate separator (',' or ';')
  */
 async function detectFormulaSeparator(sheets, sheetId, sheetName) {
+  // Test formulas with both separators
+  const testFormulas = {
+    comma: '=SUMIF(D6:D,"debit",C6:C)',
+    semicolon: '=SUMIF(D6:D;"debit";C6:C)'
+  };
+  
+  // Try comma separator first (most common)
+  const commaWorks = await testFormula(sheets, sheetId, sheetName, testFormulas.comma);
+  if (commaWorks) {
+    console.log('✅ Comma separator works for this sheet');
+    return ',';
+  }
+  
+  // Try semicolon separator
+  const semicolonWorks = await testFormula(sheets, sheetId, sheetName, testFormulas.semicolon);
+  if (semicolonWorks) {
+    console.log('✅ Semicolon separator works for this sheet');
+    return ';';
+  }
+  
+  // If both fail, default to comma and log warning
+  console.warn('⚠️ Both separators failed, defaulting to comma');
+  return ',';
+}
+
+/**
+ * Verify that the written formulas are working correctly and fix them if needed
+ * @param {Object} sheets - Google Sheets API instance
+ * @param {string} sheetId - The Google Sheet ID
+ * @param {string} sheetName - The sheet name
+ * @param {string} currentSeparator - The separator that was used
+ */
+async function verifyFormulasWork(sheets, sheetId, sheetName, currentSeparator) {
   try {
-    // Try to get spreadsheet properties to detect locale
-    const spreadsheetInfo = await sheets.spreadsheets.get({
+    // Wait a moment for formulas to calculate
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Read the formula cells to check for errors
+    const response = await sheets.spreadsheets.values.get({
       spreadsheetId: sheetId,
-      fields: 'properties'
+      range: `${sheetName}!B1:B3`
     });
     
-    const locale = spreadsheetInfo.data.properties?.locale;
+    const values = response.data.values || [];
+    let needsFix = false;
     
-    // Common locales that use semicolon as separator
-    const semicolonLocales = [
-      'de', 'fr', 'it', 'es', 'pt', 'nl', 'pl', 'ru', 'sv', 'da', 'no', 'fi',
-      'de-DE', 'fr-FR', 'it-IT', 'es-ES', 'pt-PT', 'nl-NL', 'pl-PL', 'ru-RU',
-      'sv-SE', 'da-DK', 'no-NO', 'fi-FI'
-    ];
-    
-    if (locale && semicolonLocales.some(loc => locale.startsWith(loc))) {
-      return ';';
+    // Check if any formula cells contain errors
+    for (let i = 0; i < values.length; i++) {
+      const cellValue = values[i]?.[0];
+      if (cellValue && cellValue.toString().startsWith('#')) {
+        console.warn(`⚠️ Formula error detected in cell B${i + 1}: ${cellValue}`);
+        needsFix = true;
+      }
     }
     
-    // Default to comma for most locales (including en-US, en-GB, etc.)
-    return ',';
+    // If formulas have errors, try the other separator
+    if (needsFix) {
+      console.log('🔄 Attempting to fix formulas with alternative separator...');
+      const alternativeSeparator = currentSeparator === ',' ? ';' : ',';
+      
+      const fixedUpdates = [
+        {
+          range: `${sheetName}!B1:B2`,
+          values: [
+            [`=SUMIF(D6:D${alternativeSeparator}"debit"${alternativeSeparator}C6:C)`], // Pemasukan
+            [`=ABS(SUMIF(D6:D${alternativeSeparator}"credit"${alternativeSeparator}C6:C))`] // Pengeluaran
+          ]
+        }
+      ];
+      
+      await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: sheetId,
+        requestBody: {
+          valueInputOption: "USER_ENTERED",
+          data: fixedUpdates
+        }
+      });
+      
+      console.log(`✅ Formulas fixed using ${alternativeSeparator} separator`);
+    } else {
+      console.log('✅ All formulas are working correctly');
+    }
   } catch (error) {
-    console.warn('Could not detect locale, defaulting to comma separator:', error.message);
-    return ',';
+    console.warn('Error verifying formulas:', error.message);
   }
 }
 
@@ -120,7 +226,7 @@ function isRangeMerged(existingMerges, startRow, endRow, startCol, endCol) {
 async function setupSheetStructure(sheetInfo, sheetId) {
   const { sheets, sheetName, actualSheetId, existingMerges } = sheetInfo;
   
-  // Detect the appropriate formula separator for this sheet's locale
+  // Detect the appropriate formula separator by testing actual formulas
   const separator = await detectFormulaSeparator(sheets, sheetId, sheetName);
   
   // Prepare all data to write with formulas using the detected separator
@@ -149,6 +255,9 @@ async function setupSheetStructure(sheetInfo, sheetId) {
       data: updates
     }
   });
+  
+  // Verify that the formulas are working correctly
+  await verifyFormulasWork(sheets, sheetId, sheetName, separator);
   
   // Prepare merge requests only for ranges that aren't already merged
   const mergeRequests = [];
