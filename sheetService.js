@@ -31,6 +31,42 @@ async function initializeAuth() {
 // ===== SHARED HELPER FUNCTIONS =====
 
 /**
+ * Detect the formula separator used in the Google Sheet based on locale
+ * @param {Object} sheets - Google Sheets API instance
+ * @param {string} sheetId - The Google Sheet ID
+ * @param {string} sheetName - The sheet name
+ * @returns {string} - The appropriate separator (',' or ';')
+ */
+async function detectFormulaSeparator(sheets, sheetId, sheetName) {
+  try {
+    // Try to get spreadsheet properties to detect locale
+    const spreadsheetInfo = await sheets.spreadsheets.get({
+      spreadsheetId: sheetId,
+      fields: 'properties'
+    });
+    
+    const locale = spreadsheetInfo.data.properties?.locale;
+    
+    // Common locales that use semicolon as separator
+    const semicolonLocales = [
+      'de', 'fr', 'it', 'es', 'pt', 'nl', 'pl', 'ru', 'sv', 'da', 'no', 'fi',
+      'de-DE', 'fr-FR', 'it-IT', 'es-ES', 'pt-PT', 'nl-NL', 'pl-PL', 'ru-RU',
+      'sv-SE', 'da-DK', 'no-NO', 'fi-FI'
+    ];
+    
+    if (locale && semicolonLocales.some(loc => locale.startsWith(loc))) {
+      return ';';
+    }
+    
+    // Default to comma for most locales (including en-US, en-GB, etc.)
+    return ',';
+  } catch (error) {
+    console.warn('Could not detect locale, defaulting to comma separator:', error.message);
+    return ',';
+  }
+}
+
+/**
  * Get sheet information and setup the sheet structure
  * @param {string} sheetId - The Google Sheet ID
  * @returns {Object} - Sheet information including sheets instance, name, and sheet ID
@@ -84,13 +120,16 @@ function isRangeMerged(existingMerges, startRow, endRow, startCol, endCol) {
 async function setupSheetStructure(sheetInfo, sheetId) {
   const { sheets, sheetName, actualSheetId, existingMerges } = sheetInfo;
   
-  // Prepare all data to write with formulas
+  // Detect the appropriate formula separator for this sheet's locale
+  const separator = await detectFormulaSeparator(sheets, sheetId, sheetName);
+  
+  // Prepare all data to write with formulas using the detected separator
   const updates = [
     {
       range: `${sheetName}!A1:F3`,
       values: [
-        ["Pemasukan", "=SUMIF(D6:D,\"debit\",C6:C)", "", "", "", ""], // Formula to sum all debit amounts
-        ["Pengeluaran", "=ABS(SUMIF(D6:D,\"credit\",C6:C))", "", "", "", ""], // Formula to sum all credit amounts (absolute value)
+        ["Pemasukan", `=SUMIF(D6:D${separator}"debit"${separator}C6:C)`, "", "", "", ""], // Formula to sum all debit amounts
+        ["Pengeluaran", `=ABS(SUMIF(D6:D${separator}"credit"${separator}C6:C))`, "", "", "", ""], // Formula to sum all credit amounts (absolute value)
         ["Saldo", "=B1-B2", "", "", "", ""] // Formula to calculate balance (Pemasukan - Pengeluaran)
       ]
     },
