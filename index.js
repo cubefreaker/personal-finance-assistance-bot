@@ -394,6 +394,13 @@ bot.on(message("photo"), async (ctx) => {
           const date = processTransactionDate(transaction);
           const amount = processTransactionAmount(transaction);
           
+          let descriptionUpper = transaction.description.toUpperCase();
+          if(descriptionUpper.includes("[RCPTXXXX]")) {
+            // generate random 4 character string
+            let randomString = Math.random().toString(36).substring(2, 6).toUpperCase();
+            transaction.description = descriptionUpper.replace("[RCPTXXXX]", `[${randomString}]`);
+          }
+
           // Add to batch save array
           transactionsToSave.push(createSheetTransaction(transaction, date, amount, ctx.from, "Receipt"));
           

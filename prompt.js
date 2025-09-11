@@ -211,7 +211,7 @@ Guidelines for processing receipts:
 - Use Indonesian currency format recognition (Rp, IDR)
 - Common categories: "Food & Beverage", "Transportation", "Shopping", "Healthcare", "Entertainment", "Utilities", "Income", etc.
 - If receipt is unclear or not readable, respond with message type
-- Add restaurant or store name prefix with bracket in description if present (eg. "[STARBUCKS] Coffee Latte"), if not, use 4 character random string as prefix (eg. "[4CNR] Coffee Latte")
+- Add restaurant or store name prefix with bracket in description if present (eg. "[STARBUCKS] Coffee Latte"), if not, use "RCPTXXXX" string as prefix (eg. "[RCPTXXXX] Coffee Latte")
 - Add item count and price per item suffix in description if present (eg. "[STARBUCKS] Coffee Latte (2x @10,000)")
 - do not forget to add discount and tax amount to transaction amount if present
 
