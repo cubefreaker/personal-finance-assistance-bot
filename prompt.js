@@ -40,6 +40,32 @@ transaction log: "Nasi goreng 10000, Es jeruk 4000"
 "category": "Food & Beverage",
 "message": ""
 }]
+Note for description:
+- if transaction log contain description of item count and price per item, use it in description. if total amount is mentioned, use it as amount, if not, count the amount of item count and price per item to get the total amount
+- if price per item is mentioned, the format in description should be "(2x @10000)"
+Example:
+transaction log: "coffee latte 2x 10000"
+[{
+"type": "transaction",
+"description": "coffee latte (2x @10000)",
+"dbcr": "credit",
+"amount": 20000,
+"date": null,
+"dateDiff": null,
+"category": "Food & Beverage",
+"message": ""
+}]
+transaction log: "americano 2x 8000, 16000"
+[{
+"type": "transaction",
+"description": "americano (2x @8000)",
+"dbcr": "credit",
+"amount": 16000,
+"date": null,
+"dateDiff": null,
+"category": "Food & Beverage",
+"message": ""
+}]
 Note for category:
 - if category is mentioned in the transaction log, use it.
 - if category is not mentioned in the transaction log, use the category that is most likely to be the correct one.
@@ -187,6 +213,7 @@ Guidelines for processing receipts:
 - If receipt is unclear or not readable, respond with message type
 - Add restaurant or store name prefix with bracket in description if present (eg. "[STARBUCKS] Coffee Latte")
 - Add item count and price per item suffix in description if present (eg. "[STARBUCKS] Coffee Latte (2x @10,000)")
+- do not forget to add discount and tax amount to transaction amount if present
 
 IMPORTANT NOTE:
 - If the image is not a receipt or is unclear/unreadable, reply with proper message
