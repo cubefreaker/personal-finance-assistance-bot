@@ -388,6 +388,9 @@ bot.on(message("photo"), async (ctx) => {
         }
       }
       
+      // generate random 4 character string
+      let randomString = Math.random().toString(36).substring(2, 6).toUpperCase();
+
       // Prepare transactions for batch saving
       for (const transaction of transactionData) {
         if (transaction.type === "transaction") {
@@ -396,8 +399,6 @@ bot.on(message("photo"), async (ctx) => {
           
           let descriptionUpper = transaction.description.toUpperCase();
           if(descriptionUpper.includes("[RCPTXXXX]")) {
-            // generate random 4 character string
-            let randomString = Math.random().toString(36).substring(2, 6).toUpperCase();
             transaction.description = descriptionUpper.replace("[RCPTXXXX]", `[${randomString}]`);
           }
 
@@ -525,6 +526,9 @@ bot.on(message("document"), async (ctx) => {
           return;
         }
       }
+
+      // generate random 4 character string
+      let randomString = Math.random().toString(36).substring(2, 6).toUpperCase();
       
       // Prepare transactions for batch saving
       for (const transaction of transactionData) {
@@ -532,6 +536,11 @@ bot.on(message("document"), async (ctx) => {
           const date = processTransactionDate(transaction);
           const amount = processTransactionAmount(transaction);
           
+          let descriptionUpper = transaction.description.toUpperCase();
+          if(descriptionUpper.includes("[RCPTXXXX]")) {
+            transaction.description = descriptionUpper.replace("[RCPTXXXX]", `[${randomString}]`);
+          }
+
           // Add to batch save array
           transactionsToSave.push(createSheetTransaction(transaction, date, amount, ctx.from, "Receipt"));
           

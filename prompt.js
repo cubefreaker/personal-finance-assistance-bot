@@ -212,7 +212,7 @@ Guidelines for processing receipts:
 - Common categories: "Food & Beverage", "Transportation", "Shopping", "Healthcare", "Entertainment", "Utilities", "Income", etc.
 - If receipt is unclear or not readable, respond with message type
 - Mind for discount and tax if present
-- Add restaurant or store name prefix with bracket in description if present (eg. "[STARBUCKS] Coffee Latte"), if not, use "RCPTXXXX" string as prefix (eg. "[RCPTXXXX] Coffee Latte")
+- Add restaurant or store name prefix with bracket in description if present (eg. "[STARBUCKS] Coffee Latte"), if not, use "[RCPTXXXX]" string as prefix (eg. "[RCPTXXXX] Coffee Latte"), this prefix should applied for all transactions in the receipt including discount and tax
 - Add item count and price per item suffix in description if present (eg. "[STARBUCKS] Coffee Latte (2x @10,000)")
 
 IMPORTANT NOTE:
